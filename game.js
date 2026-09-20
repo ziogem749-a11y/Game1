@@ -1383,9 +1383,7 @@ function* bab2() {
   yield DIM(1, 0.4);
   yield DO(() => { saveGame(); });
   yield T(1.5);
-  yield CARD('Bersambung...', 'Bab 3', 4.2);
-  yield DO(() => { state = 'end'; ctrl = 'none'; setB2Lights(false); });
-  showPanel('<div class="board"><h1>Bab 2 selesai</h1><h2>Jalur yang Berbisik</h2><p>Bab 3 menyusul. Pilihanmu (jaket, selendang, suara yang memanggil, foto, dan siapa yang kamu tatap) sudah tersimpan untuk bab berikutnya.</p><button class="cta" data-do="new">Main dari awal</button><button class="cta alt" data-do="menu">Ke menu</button></div>');
+  yield* bab3();
 }
 function enterClearing() {
   clearing.visible = true; CORR.mode = 'none'; wispS.on = false; wisp.visible = false; dLamp.visible = false; hideFig(); ambientOn = false;
@@ -1399,6 +1397,270 @@ function enterClearing() {
   cineTo(CL.x + 2.4, 2.3, CL.z + 20, CL.x, 3.2, CL.z - 6, 0.35);
 }
 
+
+/* =====================  CERITA: BAB 3 (YANG KEEMPAT) & BAB 4 (FAJAR JUMAT KLIWON)  ===================== */
+const ALT = { x: CL.x, z: CL.z - 5.4 };
+const CANDLES = [0, 1, 2, 3, 4, 5].map(i => { const a = i / 6 * Math.PI * 2 + 0.3; return { x: ALT.x + Math.cos(a) * 1.5, z: ALT.z + Math.sin(a) * 1.5 }; });
+MOODS.fajar = { top: C(0x3b4a7c), fog: C(0xb58c7c), glow: C(0xffc38a), sun: C(0xffe2b4), fogD: 0.013, hemiSky: C(0xb4a4bc), hemiGnd: C(0x4c4238), hemiI: 1.1, dirCol: C(0xffc890), dirI: 2.1, exp: 1.0, cloud: C(0xffd2b4), cloudA: 0.8, mount: C(0x9c7c82) };
+WHO.Laras = '#bfeec4';
+const altarBloom = new THREE.Mesh(new THREE.SphereGeometry(0.13, 7, 5), LMat({ color: 0xf2f0e6, emissive: 0x555544 })); altarBloom.position.set(0.05, 1.0, -4.95); altarBloom.visible = false; clearing.add(altarBloom);
+const altarScarf = mkScarf(0.5, 1.3); altarScarf.rotation.x = -Math.PI / 2; altarScarf.position.set(-0.7, 0.94, -4.7); altarScarf.visible = false; clearing.add(altarScarf);
+let R3 = { candles: 0, sesajen: false, selendang: false, foto: false, kind: false, end: '' };
+
+function* walkAlone(text) { yield DO(() => { followCam(); ctrl = 'walk'; setObj(text); }); }
+function* stopAlone() { yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); }); }
+function lightCandle(i) { clFlames[i].k = 1; sfx.chime(); R3.candles++; lampB.base = 8 + 5 * R3.candles; fearBase = Math.max(0.08, 0.3 - 0.035 * R3.candles); flicker(0.4); }
+function figBehindC() {           // sosok muncul di belakang pemain (versi untuk petilasan)
+  const z = raka.z + 5.4, x = raka.x + 0.9; showFig(x, z); sfx.sting(); addFear(0.28); flicker(1.4); G_shake(0.6);
+  later(1.7, () => { if (!R3.laras) { hideFig(); flicker(0.6); } });
+}
+function LOOKAT(need, maxSecs) {    // kebalikan "jangan menoleh": kali ini pemain HARUS menoleh
+  let k = 0, held = 0, hinted = false;
+  return {
+    init() { setObj('Menolehlah. Kali ini, tatap dia.'); followCam(); ctrl = 'look'; resetInput(); },
+    test: dt => {
+      k += dt; if (lookingBack()) held += dt; else held = Math.max(0, held - dt * 0.5);
+      if (k > 9 && !hinted) { hinted = true; toast('Geser jari di sisi kanan layar untuk memutar kamera ke belakang.', 5200); }
+      if (Math.floor(k * 0.4) !== Math.floor((k - dt) * 0.4)) sfx.whisper();
+      return held >= need || k >= maxSecs;
+    },
+    done() { setObj(''); ctrl = 'none'; resetInput(); }
+  };
+}
+function WFLASH(sec) {
+  let k = 0;
+  return {
+    init() { el.fade.style.transition = 'none'; el.fade.style.background = '#fff'; el.fade.style.opacity = '1'; },
+    test: dt => ((k += dt) >= 0.25),
+    done() { el.fade.style.transition = 'opacity ' + sec + 's'; el.fade.style.opacity = '0'; setTimeout(() => { el.fade.style.background = '#000'; }, sec * 1000 + 150); }
+  };
+}
+function WHITEHOLD(sec) {           // layar putih penuh (cahaya pagi) yang bertahan sebentar
+  let k = 0;
+  return { init() { el.fade.style.transition = 'opacity 0.4s'; el.fade.style.background = '#fff'; el.fade.style.opacity = '1'; }, test: dt => ((k += dt) >= sec) };
+}
+function* scareGuard(line, secs) {
+  yield DO(() => { sfx.stepsBehind(8, 0.7); addFear(0.1); flicker(0.9); });
+  yield T(1.2);
+  yield SAY('Suara', line);
+  yield LOOKGUARD(secs || 7, figBehindC);
+}
+
+function* bab3() {
+  ctrl = 'none'; setObj(''); dlgHide(); resetInput(); TIMERS.length = 0;
+  el.fade.style.transition = 'none'; el.fade.style.opacity = '1';
+  if (!S.finds) S.finds = [];
+  if (S.items.indexOf('Bunga sesajen') < 0) S.items.push('Bunga sesajen');
+  R3 = { candles: 0, sesajen: false, selendang: false, foto: false, kind: false, end: '', laras: false };
+  yield DO(() => {
+    setB2Lights(true); enterClearing(); setMood('petil'); ambientOn = false; fearBase = 0.3; fear = Math.max(fear, 0.3);
+    clFlames.forEach(f => { f.k = 0; }); lampB.base = 0; flashOn = false; darkK = 1; spiritFixed = 9;
+    altarBloom.visible = false; altarScarf.visible = false; hideFig();
+    place(raka, ALT.x + 0.4, ALT.z + 5.6, Math.PI); place(dinda, ALT.x + 0.8, ALT.z + 2.7, Math.PI); dinda.follow = false; dinda.watch = false; dindaScarf.visible = true; bayuScarf.visible = false;
+    place(bayu, ALT.x + 2.4, ALT.z + 6.4, 0); faceTo(bayu, raka.x, raka.z); bayu.follow = false; bayu.watch = true;
+    camYaw = 0; followCam(); snapCam(); saveGame();
+  });
+  yield CARD('Bab 3', 'Yang Keempat', 3.4);
+  yield FADE(false, 2.2);
+  yield SAY('Narator', 'Gelap. Jangkrik berhenti bersuara, seolah seluruh hutan menahan napas.');
+  yield SAY('Narator', 'Enam lilin di altar sudah padam. Di kaki beringin, sesuatu berdiri dan menunggu.');
+  if (S.flags.menolehAkhir) yield SAY('Narator', 'Bayu masih berdiri di belakangmu. Napasnya dingin di tengkuk.');
+  else yield SAY('Narator', 'Dinda berdiri tak bergerak di depan altar. Selendang hijau itu melilit lehernya.');
+  yield DO(() => { frame2(raka, bayu, 3.6, 1, 1.6); sfx.hum(); });
+  yield SAY('Bayu', 'Ka... dengar aku sebentar. Cuma sebentar, sebelum dia bicara lewat mulutku lagi.');
+  yield SAY('Raka', 'Siapa kamu sebenarnya, Yu?');
+  yield SAY('Bayu', 'Bayu. Nama itu memang punyaku. Aku orang ketiga dari kiri di foto itu.');
+  yield SAY('Bayu', '14 Suro 1999. Kami berempat naik: aku, dua temanku, dan Laras.');
+  yield SAY('Bayu', 'Waktu turun malam-malam, dari belakang ada yang memanggil. Suara Laras. \"Tunggu... tunggu aku.\"');
+  yield SAY('Bayu', 'Aku yang bilang, \"Itu cuma angin. Jangan menoleh.\" Kami terus berjalan. Tak seorang pun menoleh.');
+  yield SAY('Bayu', 'Kami turun bertiga. Yang keempat... tertinggal di atas.');
+  yield SAY('Raka', 'Kamu... sudah mati juga?');
+  yield SAY('Bayu', 'Aku pulang. Hidup, dengan suara itu di kepalaku sampai akhir. Tapi tiap Suro aku kembali naik.');
+  yield SAY('Bayu', 'Mencari orang yang mau menoleh untuknya. Kamu bukan kebetulan, Ka. Aku yang memilih kalian. Maafkan aku.');
+  yield SAY('Bayu', 'Selendang itu bukan kutukan. Itu miliknya. Dia cuma ingin dikenali, dan selama ini tak ada yang mau menoleh.');
+  yield SAY('Bayu', 'Nyalakan lilin-lilin itu. Dia tenang kalau ada api. Korek ini sudah dua puluh tujuh tahun kubawa.');
+  yield* walkAlone('Ambil korek dari Bayu.');
+  yield ACTION('Ambil korek', bayu.x, bayu.z, 2.4);
+  yield DO(() => { S.items.push('Korek api tua'); sfx.chime(); toast('Mendapat: Korek api tua 🔥'); });
+  yield* stopAlone();
+  yield DO(() => { addFind('Cerita Bayu', 'Kami berempat naik tahun 1999. Laras memanggil dari belakang, kami tak menoleh. Turun bertiga.'); });
+  // ---------------- menyalakan enam lilin ----------------
+  for (let i = 0; i < 6; i++) {
+    yield* walkAlone('Nyalakan lilin di altar (' + (i + 1) + '/6).');
+    yield ACTION('Nyalakan lilin', CANDLES[i].x, CANDLES[i].z, 2.1);
+    yield DO(() => { lightCandle(i); });
+    yield* stopAlone();
+    yield T(0.5);
+    if (i === 1) { yield* scareGuard('(dari belakang, sangat dekat) ...jangan berhenti... aku di sini...', 7); yield SAY('Raka', '(Jangan panik. Nyalakan sisanya.)'); }
+    if (i === 3) { yield* scareGuard('(berbisik di telinga kirimu) ...Raka... kau dengar aku, kan...', 8); yield SAY('Narator', 'Api keempat berkobar. Bayangan di pepohonan mundur selangkah.'); }
+  }
+  // ---------------- Laras terlihat ----------------
+  yield DO(() => { R3.laras = true; showFig(ALT.x + 0.5, ALT.z - 4.2); spiritFixed = 0; fearBase = 0.12; sfx.chime(); cineTo(ALT.x + 0.5, 2.0, ALT.z + 3.6, ALT.x + 0.5, 1.7, ALT.z - 4.2, 1.6); });
+  yield SAY('Narator', 'Keenam lilin menyala. Di seberang altar, sosok itu akhirnya terlihat jelas: seorang gadis muda bersyal hijau muda, pucat, basah oleh embun.');
+  yield SAY('Laras', 'Kalian... menyalakan api untukku?');
+  yield SAY('Laras', 'Sudah lama sekali tidak ada yang menyalakan api untukku.');
+  yield SAY('Laras', 'Setiap malam Suro aku memanggil. \"Tunggu aku.\" Mereka selalu berjalan lebih cepat.');
+  yield SAY('Bayu', 'Laras... maafkan aku. Aku takut. Aku bilang itu cuma angin.');
+  yield SAY('Laras', 'Bayu. Kau selalu kembali, tapi kau tak pernah menoleh.');
+  yield SAY('Laras', 'Aku meminjam Dinda sebentar. Suaranya hangat. Aku cuma ingin ada yang menemaniku turun.');
+  yield SAY('Raka', '(Menemani... berarti Dinda tidak akan ikut turun.)');
+  yield SAY('Laras', 'Aku tidak jahat. Aku hanya kesepian, dan kesepian membuat orang lupa cara melepaskan.');
+  // ---------------- ritual ----------------
+  yield DO(() => { followCam(); });
+  yield* walkAlone('Letakkan bunga sesajen di altar.');
+  yield ACTION('Letakkan sesajen', ALT.x, ALT.z + 2.7, 2.2);
+  yield DO(() => { R3.sesajen = true; altarBloom.visible = true; S.items = S.items.filter(x => x !== 'Bunga sesajen'); sfx.note(); toast('Sesajen diletakkan dengan hormat 🌼'); });
+  yield* stopAlone();
+  yield SAY('Laras', '(pelan) Bunga... Sudah lama aku tidak menerima bunga.');
+  yield* scareGuard('(dari belakang) ...jangan lepaskan Dinda... dia hangat...', 7);
+  yield* walkAlone('Lepaskan selendang dari leher Dinda.');
+  yield ACTION('Lepas selendang', dinda.x, dinda.z, 2.2);
+  yield DO(() => { dindaScarf.visible = false; S.items.push('Selendang hijau'); sfx.chime(); addFear(0.1); faceTo(dinda, raka.x, raka.z); dinda.watch = true; });
+  yield* stopAlone();
+  yield SAY('Dinda', 'Ka...? Aku... kenapa dingin sekali? Kenapa aku ada di sini?');
+  yield SAY('Raka', 'Tenang, Din. Aku belum selesai. Tetap di dekatku.');
+  yield* walkAlone('Letakkan selendang di altar.');
+  yield ACTION('Letakkan selendang', ALT.x - 1.1, ALT.z + 2.5, 2.2);
+  yield DO(() => { R3.selendang = true; altarScarf.visible = true; S.items = S.items.filter(x => x !== 'Selendang hijau'); sfx.note(); toast('Selendang dikembalikan ke altar 🧣'); });
+  yield* stopAlone();
+  if (S.flags.fotoDiambil) {
+    yield* walkAlone('Kembalikan foto Polaroid ke altar.');
+    yield ACTION('Kembalikan foto', ALT.x + 1.1, ALT.z + 2.5, 2.2);
+    yield DO(() => { R3.foto = true; sfx.note(); toast('Foto dikembalikan 📷'); });
+    yield* stopAlone();
+  }
+  yield SAY('Laras', '(sangat lirih) ...terima kasih.');
+  // ---------------- menoleh ----------------
+  yield DO(() => { hideFig(); flicker(0.8); });
+  yield FADE(true, 0.3);
+  yield DO(() => { place(raka, ALT.x, ALT.z + 3.0, Math.PI); camYaw = 0; followCam(); snapCam(); });
+  yield FADE(false, 0.6);
+  yield SAY('Narator', 'Hening. Kemudian, dari belakangmu, sangat dekat, seseorang memanggil namamu.');
+  yield DO(() => { sfx.whisper(); showFig(raka.x, raka.z + 3.4); addFear(0.15); });
+  yield SAY('Laras', 'Raka...');
+  yield LOOKAT(1.0, 34);
+  yield DO(() => { cineTo(raka.x + 0.7, raka.y + 1.75, raka.z - 0.6, raka.x, 1.7, raka.z + 3.4, 2.4); sfx.chime(); fearBase = 0.05; });
+  yield SAY('Laras', 'Kau menoleh.');
+  yield SAY('Laras', 'Dua puluh tujuh tahun... tak ada yang menoleh.');
+  yield SAY('Narator', 'Wajahnya tak menakutkan. Hanya sangat, sangat lelah.');
+  yield CHOICE(['\"Aku di sini, Laras. Aku dengar kamu.\"', '\"Pergi! Kembalikan Dinda!\"'], 10);
+  R3.kind = (LASTCHOICE === 0); S.flags.laras = LASTCHOICE;
+  if (window.__FORCE_KIND !== undefined) R3.kind = !!window.__FORCE_KIND;
+  const full = R3.sesajen && R3.selendang;
+  R3.end = (R3.kind && full) ? 'A' : (R3.kind ? 'B' : 'C');
+  if (window.__FORCE_END) R3.end = window.__FORCE_END;
+  S.flags.ending = R3.end; saveGame();
+  if (R3.end === 'A') {
+    yield SAY('Raka', 'Aku dengar kamu. Maaf... kami semua lewat terlalu cepat. Kamu tidak sendirian lagi.');
+    yield SAY('Laras', '(tersenyum, untuk pertama kalinya) ...kau menoleh. Itu saja. Itu yang kutunggu.');
+    yield SAY('Narator', 'Api keenam lilin bergoyang, lalu naik lurus seperti doa. Selendang di altar terangkat perlahan, menjadi kabut hijau yang hangat.');
+    yield SAY('Bayu', 'Laras... boleh aku ikut pulang?');
+    yield SAY('Laras', 'Ayo, Bayu. Kita turun bersama. Kali ini aku yang menunggumu.');
+  } else if (R3.end === 'B') {
+    yield SAY('Raka', 'Aku dengar kamu, Laras. Aku di sini.');
+    yield SAY('Laras', '(suaranya bergetar) ...kau baik. Tapi ada yang belum kau kembalikan dengan hormat.');
+    yield SAY('Narator', 'Lilin-lilin meredup satu per satu. Sosok itu memudar pelan, tak sepenuhnya pergi.');
+    yield SAY('Laras', 'Bawa Dinda pulang. Kembalilah saat Suro tahun depan... dan menolehlah lebih cepat.');
+  } else {
+    yield SAY('Narator', 'Wajah gadis itu berubah. Kelelahan di matanya menjadi sesuatu yang dingin dan sangat lapar.');
+    yield SAY('Laras', 'Sama saja seperti mereka. Semua orang menoleh hanya untuk menyuruhku pergi.');
+    yield DO(() => { sfx.sting(); flicker(2.4); addFear(0.4); G_shake(1); clFlames.forEach(f => { f.k = 0; }); lampB.base = 0; });
+    yield SAY('Laras', 'Kalau begitu... aku ikut turun bersamamu.');
+  }
+  if (R3.end === 'C') yield DIM(1, 0.7); else yield WHITEHOLD(1.0);
+  yield DO(() => { hideFig(); saveGame(); });
+  yield T(0.6);
+  yield* bab4(R3.end);
+}
+
+function* bab4(END) {
+  ctrl = 'none'; setObj(''); dlgHide(); resetInput(); TIMERS.length = 0;
+  yield DO(() => {
+    el.fade.style.transition = 'none'; el.fade.style.background = '#000'; el.fade.style.opacity = '1';
+    resetWorld(); state = 'play'; hidePanel(); clearing.visible = false;
+    setMood('fajar'); BOUNDS.z0 = -38; CORR.mode = 'none';
+    place(raka, GATE.x, GATE.z - 5, 0); place(dinda, GATE.x + 1.7, GATE.z - 6.4, 0); dinda.follow = false; dinda.watch = false; dindaScarf.visible = false;
+    place(mbah, MK.x - 3.0, MK.z + 3.5, Math.PI); mbah.watch = true; mbah.g.visible = true;
+    if (END === 'A') { place(bayu, GATE.x - 2.6, GATE.z - 3.6, 0); bayu.watch = false; showFig(GATE.x - 4.4, GATE.z - 3.8); }
+    else if (END === 'B') { place(bayu, GATE.x - 2.6, GATE.z - 3.6, 0); bayu.watch = false; }
+    else bayu.g.visible = false;
+    camYaw = Math.PI; followCam(); snapCam();
+  });
+  yield CARD('Bab 4', 'Fajar Jumat Kliwon', 3.2);
+  yield FADE(false, 2.0);
+  yield SAY('Narator', 'Fajar Jumat Kliwon. Kabut menipis, dan burung-burung kembali bersuara di Gunung Pandan.');
+  yield SAY('Narator', 'Di kejauhan, rombongan warga mulai naik membawa tumpeng dan bunga untuk sedekah bumi.');
+  if (END === 'A') {
+    yield DO(() => { cineTo(GATE.x - 0.6, 2.0, GATE.z - 8.4, GATE.x - 3.4, 1.5, GATE.z - 3.8, 1.6); });
+    yield SAY('Bayu', 'Ka... Din. Terima kasih. Dua puluh tujuh tahun aku ingin mengatakan itu.');
+    yield SAY('Laras', '(dari sampingnya, lembut) Kalian juga, hati-hati di jalan turun.');
+    yield WFLASH(1.8);
+    yield DO(() => { hideFig(); bayu.g.visible = false; sfx.chime(); followCam(); });
+  } else if (END === 'B') {
+    yield DO(() => { cineTo(GATE.x - 0.6, 2.0, GATE.z - 8.4, GATE.x - 2.6, 1.5, GATE.z - 3.6, 1.6); });
+    yield SAY('Bayu', 'Aku masih harus menemaninya, Ka. Tahun depan, kalau kamu berani... menolehlah lebih cepat.');
+    yield DO(() => { bayu.g.visible = false; sfx.whisper(); followCam(); });
+  } else {
+    yield SAY('Dinda', 'Ka... kamu diam terus dari tadi. Kamu kenapa?');
+    yield SAY('Raka', '(Tidak ada yang berjalan di belakang kami. Tidak ada.)');
+  }
+  yield DO(() => { dinda.follow = true; followCam(); });
+  yield* walkAlone('Turun ke pos jaga. Mbah Karto menunggu.');
+  yield GOTO(mbah.x + 0.6, mbah.z - 3.0, 3.0);
+  yield* stopAlone();
+  yield DO(() => { dinda.follow = false; faceTo(raka, mbah.x, mbah.z); faceTo(dinda, mbah.x, mbah.z); frame2(raka, mbah, 4.6, 1, 1.6); });
+  if (END === 'A') {
+    yield SAY('Mbah Karto', 'Empat orang naik di tahun 99. Tiga yang turun. Semalam, akhirnya, yang keempat ikut turun.');
+    yield SAY('Raka', 'Mbah tahu?');
+    yield SAY('Mbah Karto', 'Dua puluh tujuh tahun Mbah berjaga di sini. Menunggu ada yang mau menoleh untuk Laras.');
+    yield SAY('Mbah Karto', 'Aturan itu bukan untuk menakuti. Jangan pakai hijau muda, supaya kalian tak dikira dia. Jangan ambil apa pun, supaya tak berhutang padanya.');
+    yield SAY('Mbah Karto', 'Jangan menoleh, supaya kalian tak lari terlalu cepat ke arah yang belum siap. Tapi ada satu orang, satu malam, yang harus melanggarnya.');
+    yield SAY('Raka', 'Aku menoleh, Mbah.');
+    yield SAY('Mbah Karto', 'Ya. Dan itu satu-satunya pantangan yang boleh dilanggar. Terima kasih, Nak.');
+    yield SAY('Narator', 'Matahari naik di atas Gunung Pandan. Di pos jaga, lampu minyak padam dengan sendirinya. Malam itu tak ada lagi yang memanggil dari belakang.');
+  } else if (END === 'B') {
+    yield SAY('Mbah Karto', 'Kalian turun berdua. Tapi wajah kalian... masih ada yang belum selesai.');
+    yield SAY('Raka', 'Dia belum sepenuhnya tenang, Mbah. Ada yang belum kukembalikan dengan benar.');
+    yield SAY('Mbah Karto', 'Kadang cukup untuk satu malam. Sesajen dan selendang harus kembali dengan hormat, dan hati yang menoleh harus utuh.');
+    yield SAY('Mbah Karto', 'Suro tahun depan, naiklah lagi. Bawa yang belum kalian bawa.');
+    yield SAY('Narator', 'Pagi terasa terang, tetapi jauh di hutan sana, seseorang masih menunggu dipanggil dengan namanya.');
+  } else {
+    yield SAY('Mbah Karto', 'Nak... jangan menoleh.');
+    yield SAY('Mbah Karto', '(menatap ke belakang Raka, sangat pelan) Berapa yang naik, dan berapa yang turun?');
+    yield SAY('Raka', 'Kami berdua, Mbah. Kan?');
+    yield DO(() => { sfx.stepsBehind(6, 0.6); sfx.whisper(); });
+    yield SAY('Mbah Karto', 'Sudah Mbah katakan. Dia paling suka orang yang berjalan sambil ketakutan.');
+    yield SAY('Narator', 'Di belakang mereka, sangat pelan, seseorang mengikuti dari jarak beberapa langkah.');
+    yield DO(() => { sfx.whisper(); addFear(0.4); });
+    yield SAY('Suara', '(dari belakang) ...Raka... tunggu aku...');
+  }
+  yield FADE(true, 2.0);
+  const names = { A: 'Yang Keempat Pulang', B: 'Belum Selesai', C: 'Yang Keempat Ikut Turun' };
+  yield CARD('TAMAT', names[END] || '', 5);
+  yield DO(() => { state = 'end'; ctrl = 'none'; saveGame(); showEndPanel(END, names[END]); });
+}
+function showEndPanel(END, name) {
+  const msg = END === 'A' ? 'Kamu mendapat akhir terbaik: sesajen, selendang, dan hatimu menoleh pada waktunya.' : (END === 'B' ? 'Ada akhir yang lebih baik. Coba lengkapi sesajen dan selendang, lalu jawab Laras dengan tulus.' : 'Ada dua akhir lain. Coba nyalakan lilin, kembalikan selendang, dan jawab Laras dengan lembut.');
+  showPanel('<div class="board"><h1>Tamat</h1><h2>' + name + '</h2><p>' + msg + '</p><button class="cta" data-do="new">Main lagi dari awal</button><button class="cta alt" data-do="bab3">Ulangi Bab 3</button><button class="cta alt" data-do="credits">Kredit aset</button><button class="cta alt" data-do="menu">Ke menu</button></div>');
+}
+function showCredits() {
+  showPanel('<div class="board"><h1>Kredit</h1><h2>Selendang Hijau</h2><ul>' +
+    '<li>Cerita fiksi berlatar legenda Gunung Pandan, Bojonegoro. Seluruh tokoh dan pantangan tambahan adalah karangan.</li>' +
+    '<li>Tokoh pria: paket Animated Men oleh Quaternius (CC0).</li>' +
+    '<li>Tokoh perempuan: \"human npc\" oleh opavikE3530H (Sketchfab).</li>' +
+    '<li>Pohon: \"Tree Animate\" oleh RandyGF (Sketchfab), lisensi CC BY 4.0. Dimodifikasi: dipisah, dikecilkan, dan diberi tingkat detail.</li>' +
+    '<li>Gerbang: \"Torii Gate - 3D Model\" oleh Scarit (Sketchfab).</li>' +
+    '<li>Gunung: \"Paramount Mountain 2012\" oleh Victor Hugo Ochoa (Sketchfab).</li>' +
+    '<li>Rumput: \"realistics grass 10\" oleh POLYSCAN (Sketchfab).</li>' +
+    '<li>Awan: paket \"cartoon night sky\" (Sketchfab).</li>' +
+    '<li>Mesin 3D: Three.js (MIT).</li></ul><button class="cta" data-do="menu">Kembali</button></div>');
+}
+function startBab3() {
+  resetInput(); hidePanel(); resetWorld();
+  if (!S.finds) S.finds = []; if (!S.items) S.items = [];
+  state = 'play'; el.fade.style.transition = 'none'; el.fade.style.opacity = '1';
+  startScript(bab3());
+}
 
 /* =====================  MODEL 3D (.glb / .fbx) OPSIONAL  ===================== */
 // Taruh file model di folder utama repo. Game mencoba nama di "files" berurutan; kalau tidak ada, tokoh tetap memakai balok.
@@ -1436,7 +1698,7 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v15';
+const BUILD = 'v16';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
@@ -1768,7 +2030,7 @@ function showTitle() {
   setMood('dusk');
   place(raka, START.x, START.z, Math.PI); place(dinda, START.x - 1.7, START.z + 2.0, Math.PI); place(bayu, START.x + 1.8, START.z + 2.6, Math.PI); place(mbah, MK.x, MK.z, 0); faceTo(mbah, START.x, START.z);
   cineTo(START.x + 6, 3.4, START.z + 8, 0, 12, -50, 3); snapCam();
-  showPanel('<div class="board"><h1>Selendang Hijau</h1><h2>Horor Gunung Pandan</h2><p>Tiga pendaki, satu larangan yang dilanggar. Cerita fiksi berlatar legenda Gunung Pandan, Bojonegoro. Pakai earphone dan putar HP ke mendatar.</p><button class="cta" data-do="new">Mulai Bab 1</button><button class="cta alt" data-do="bab2">Langsung ke Bab 2</button></div>');
+  showPanel('<div class="board"><h1>Selendang Hijau</h1><h2>Horor Gunung Pandan</h2><p>Tiga pendaki, satu larangan yang dilanggar. Cerita fiksi berlatar legenda Gunung Pandan, Bojonegoro. Pakai earphone dan putar HP ke mendatar.</p><button class="cta" data-do="new">Mulai Bab 1</button><button class="cta alt" data-do="bab2">Langsung ke Bab 2</button><button class="cta alt" data-do="bab3">Langsung ke Bab 3</button><button class="cta alt" data-do="credits">Kredit aset</button></div>');
 }
 function startBab1() {
   resetInput(); hidePanel(); S.flags = {}; S.notes = []; S.items = []; S.finds = []; resetWorld(); state = 'play';
@@ -1781,6 +2043,8 @@ el.panel.addEventListener('click', e => {
   const a = b.dataset.do;
   if (a === 'new') startBab1();
   else if (a === 'bab2') startBab2();
+  else if (a === 'bab3') startBab3();
+  else if (a === 'credits') showCredits();
   else if (a === 'bright') { cycleBright(); state = 'play'; pauseGame(); }
   else if (a === 'qual') { cycleQual(); state = 'play'; pauseGame(); }
   else if (a === 'resume') { hidePanel(); state = 'play'; }
