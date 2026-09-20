@@ -30,9 +30,11 @@ try {
   showErr('WebGL tidak tersedia di perangkat ini');
   throw e;
 }
-let PR = Math.min(window.devicePixelRatio || 1, 1.5);
+const PR_MAX = Math.min(window.devicePixelRatio || 1, 1.5);
+let QUAL = 'auto'; try { QUAL = localStorage.getItem('sh_qual') || 'auto'; } catch (e) { }
+let PR = QUAL === 'low' ? 0.75 : PR_MAX;
 renderer.setPixelRatio(PR);
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = QUAL !== 'low';
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -88,7 +90,7 @@ scene.add(sky);
 const hemi = new THREE.HemisphereLight(0x8a7aa8, 0x3a2f2a, 1.0);
 scene.add(hemi);
 const dir = new THREE.DirectionalLight(0xff9a55, 2.4);
-dir.castShadow = true;
+dir.castShadow = QUAL !== 'low';
 dir.shadow.mapSize.set(1024, 1024);
 dir.shadow.camera.left = -22; dir.shadow.camera.right = 22; dir.shadow.camera.top = 22; dir.shadow.camera.bottom = -22;
 dir.shadow.camera.near = 1; dir.shadow.camera.far = 140; dir.shadow.camera.updateProjectionMatrix();
@@ -1359,15 +1361,39 @@ function enterClearing() {
 // Taruh file model di folder utama repo. Game mencoba nama di "files" berurutan; kalau tidak ada, tokoh tetap memakai balok.
 // h = tinggi tokoh (meter), rot = putar model (radian) kalau menghadap arah salah (mis. 3.1416 untuk berbalik).
 const MODELS = {
-  raka: { files: ['raka.glb', 'raka.fbx', 'Smooth_Male_Shirt.fbx', 'Male_Shirt.fbx', 'Smooth_Male_Casual.fbx', 'Male_Casual.fbx'], h: 1.75, rot: 0, tint: true, pal: { skin: 0xb98a62, hair: 0x18120e, top: 0xb6e3a0, bottom: 0x2b3448 } },
+  raka: { files: ['raka.glb', 'raka.fbx', 'Smooth_Male_LongSleeve.fbx', 'Male_LongSleeve.fbx', 'Smooth_Male_Casual.fbx', 'Male_Casual.fbx'], h: 1.75, rot: 0, tint: true, pal: { skin: 0xb98a62, hair: 0x18120e, top: 0xb6e3a0, bottom: 0x2b3448 } },
   dinda: { files: ['dinda.glb', 'dinda.fbx'], h: 1.62, rot: 0, pal: { skin: 0xc79a72, hair: 0x120d0a, top: 0x8a2f3a, bottom: 0x2a2a34 } },
-  bayu: { files: ['bayu.glb', 'bayu.fbx', 'Smooth_Male_LongSleeve.fbx', 'Male_LongSleeve.fbx'], h: 1.78, rot: 0, pal: { skin: 0xd7a67d, hair: 0x2a2018, top: 0xd9782b, bottom: 0x3a4a3a } },
+  bayu: { files: ['bayu.glb', 'bayu.fbx', 'Smooth_Male_Casual.fbx', 'Male_Casual.fbx', 'Smooth_Male_Shirt.fbx', 'Male_Shirt.fbx'], h: 1.78, rot: 0, pal: { skin: 0xd7a67d, hair: 0x2a2018, top: 0xd9782b, bottom: 0x3a4a3a } },
   mbah: { files: ['mbah.glb', 'mbah.fbx', 'Smooth_Male_Suit.fbx', 'Male_Suit.fbx'], h: 1.62, rot: 0, pal: { skin: 0xb98a60, hair: 0xe6e6e0, top: 0x2a2a35, bottom: 0x2a2a35 } },
   laras: { files: ['laras.glb', 'laras.fbx'], h: 1.9, rot: 0, pal: { skin: 0xb8c4bd, hair: 0x07090a, top: 0xbfeec4, bottom: 0x101418 } }
 };
 const gltfLoader = new GLTFLoader(), fbxLoader = new FBXLoader();
 let animToastShown = false;
-const BUILD = 'v7';
+// FBXLoader menganggap warna file sebagai sRGB, padahal Blender menyimpannya linear. Akibatnya warna jadi sangat gelap.
+// Di sini warnanya dikembalikan lalu bahan diganti MeshStandardMaterial agar cocok dengan cahaya dunia game.
+const FBX_NAMED = { tietexture: 0x2a1218, details: 0x8a7a4a, eyes: 0x0b0b0b };
+function prepFbx(root) {
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const arr = Array.isArray(o.material), mats = arr ? o.material : [o.material];
+    const out = mats.map(m => {
+      if (!m) return m;
+      let mat;
+      if (m.map) mat = new THREE.MeshStandardMaterial({ map: m.map, roughness: 0.85, metalness: 0 });
+      else {
+        const c = m.color ? m.color.clone() : new THREE.Color(0xffffff);
+        c.convertLinearToSRGB();
+        const key = String(m.name || '').toLowerCase().replace(/\s|\.\d+$/g, '');
+        if (FBX_NAMED[key] !== undefined && c.r > 0.98 && c.g > 0.98 && c.b > 0.98) c.setHex(FBX_NAMED[key]);
+        mat = new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, metalness: 0 });
+      }
+      mat.name = m.name || '';
+      return mat;
+    });
+    o.material = arr ? out : out[0];
+  });
+}
+const BUILD = 'v8';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
@@ -1387,6 +1413,14 @@ function vertT(pos, ax, i) {
 }
 // Warnai bagian baju (dada-perut) dengan warna tertentu, apa pun cara model menyimpan warnanya.
 function tintTop(root, hex, pal) {
+  let named = false;
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
+      if (m && m.color && /shirt|top|jacket|sweater|hoodie/i.test(m.name || '')) { m.map = null; m.color.setHex(hex); named = true; }
+    });
+  });
+  if (named) return;
   const meshes = []; root.traverse(o => { if (o.isMesh) meshes.push(o); });
   meshes.forEach(o => {
     const g = o.geometry, pos = g && g.attributes && g.attributes.position; if (!pos || !pos.count) return;
@@ -1467,7 +1501,7 @@ function fixModelColors(root, cfg, fname) {
     if (fixed && meshes.length === 1 && mats.length === 1 && bandColor(o, P)) return;
     o.material = arr ? out : out[0];
   });
-  root.traverse(o => { if (!o.isMesh) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m && m.emissive && m.color && !m.userData.lit) { m.userData.lit = true; m.emissive.copy(m.color).multiplyScalar(0.16); } }); });
+  root.traverse(o => { if (!o.isMesh) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m && m.emissive && m.color && !m.userData.lit) { m.userData.lit = true; m.emissive.copy(m.color).multiplyScalar(0.05); } }); });
   if (fixed && !colorToastShown) { colorToastShown = true; toast('Warna model tidak terbaca, dipakai warna cadangan (' + fname + '; bahan: ' + names.slice(0, 6).join(', ') + ')', 9000); }
 }
 function attachModel(target, cfg, key) {
@@ -1475,6 +1509,7 @@ function attachModel(target, cfg, key) {
     try {
       const root = gltf.scene, g = target.g;
       root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+      if (/\.fbx$/i.test(fname)) prepFbx(root);
       const size = new THREE.Vector3(); new THREE.Box3().setFromObject(root).getSize(size);
       root.scale.setScalar(cfg.h / Math.max(0.01, size.y) / (g.scale.y || 1));
       root.position.y = -new THREE.Box3().setFromObject(root).min.y;
@@ -1525,15 +1560,25 @@ el.panel.addEventListener('click', e => {
   if (a === 'new') startBab1();
   else if (a === 'bab2') startBab2();
   else if (a === 'bright') { cycleBright(); state = 'play'; pauseGame(); }
+  else if (a === 'qual') { cycleQual(); state = 'play'; pauseGame(); }
   else if (a === 'resume') { hidePanel(); state = 'play'; }
   else if (a === 'menu') showTitle();
 });
 function brightLabel() { return BRIGHT < 1.1 ? 'normal' : BRIGHT < 1.5 ? 'terang' : 'sangat terang'; }
 function cycleBright() { BRIGHT = BRIGHT < 1.1 ? 1.35 : BRIGHT < 1.5 ? 1.7 : 1; try { localStorage.setItem('sh_bright', String(BRIGHT)); } catch (e) { } applyMood(); }
+function qualLabel() { return QUAL === 'auto' ? 'otomatis' : (QUAL === 'high' ? 'tinggi' : 'rendah (hemat baterai)'); }
+function cycleQual() {
+  QUAL = QUAL === 'auto' ? 'high' : (QUAL === 'high' ? 'low' : 'auto');
+  try { localStorage.setItem('sh_qual', QUAL); } catch (e) { }
+  PR = QUAL === 'low' ? 0.75 : PR_MAX; renderer.setPixelRatio(PR);
+  const sh = QUAL !== 'low'; renderer.shadowMap.enabled = sh; dir.castShadow = sh;
+  scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) m.needsUpdate = true; }); });
+  resize();
+}
 function pauseGame() {
   if (state !== 'play') return;
   state = 'pause'; resetInput();
-  showPanel('<div class="board"><h1>Dijeda</h1><p>Hutan menunggu dengan sabar.</p><button class="cta" data-do="resume">Lanjut</button><button class="cta alt" data-do="bright">Kecerahan: ' + brightLabel() + '</button><button class="cta alt" data-do="menu">Ke menu</button></div>');
+  showPanel('<div class="board"><h1>Dijeda</h1><p>Hutan menunggu dengan sabar.</p><button class="cta" data-do="resume">Lanjut</button><button class="cta alt" data-do="bright">Kecerahan: ' + brightLabel() + '</button><button class="cta alt" data-do="qual">Kualitas: ' + qualLabel() + '</button><button class="cta alt" data-do="menu">Ke menu</button></div>');
 }
 $('#pauseBtn').addEventListener('click', pauseGame);
 $('#muteBtn').addEventListener('click', () => { auInit(); AU.on = !AU.on; if (AU.master) AU.master.gain.value = AU.on ? 0.6 : 0; $('#muteBtn').textContent = AU.on ? '🔊' : '🔇'; });
@@ -1609,7 +1654,7 @@ function loop(now) {
   if (raw > 0 && raw < 0.5) {
     avg += raw; avgN++;
     if (avgN >= 60) {
-      if (avg / avgN > 0.045) { if (PR > 0.9) { PR = Math.max(0.75, PR - 0.25); renderer.setPixelRatio(PR); resize(); } else if (renderer.shadowMap.enabled) { renderer.shadowMap.enabled = false; dir.castShadow = false; } }
+      if (QUAL === 'auto' && avg / avgN > 0.045) { if (PR > 0.9) { PR = Math.max(0.75, PR - 0.25); renderer.setPixelRatio(PR); resize(); } else if (renderer.shadowMap.enabled) { renderer.shadowMap.enabled = false; dir.castShadow = false; } }
       avg = 0; avgN = 0;
     }
   }
