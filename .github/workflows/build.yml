@@ -20,7 +20,7 @@ jobs:
           mkdir -p www
           npx esbuild game.js --bundle --minify --format=iife --target=chrome90 --outfile=www/game.js
           cp index.html www/
-          for f in *.glb *.png *.jpg *.jpeg *.mp3 *.ogg; do [ -e "$f" ] && cp "$f" www/; done; true
+          for f in *.glb *.fbx *.png *.jpg *.jpeg *.mp3 *.ogg; do [ -e "$f" ] && cp "$f" www/; done; true
       - name: Simpan untuk APK
         uses: actions/upload-artifact@v4
         with:
