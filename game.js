@@ -9,6 +9,8 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
    ===================================================================== */
 
 const $ = s => document.querySelector(s);
+// Bahan Lambert jauh lebih ringan daripada Standard di HP; roughness/metalness tidak dipakai.
+function LMat(p) { const q = Object.assign({}, p); delete q.roughness; delete q.metalness; return new THREE.MeshLambertMaterial(q); }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const angDiff = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
@@ -30,11 +32,11 @@ try {
   showErr('WebGL tidak tersedia di perangkat ini');
   throw e;
 }
-const PR_MAX = Math.min(window.devicePixelRatio || 1, 1.5);
+const PR_HI = Math.min(window.devicePixelRatio || 1, 1.5), PR_MAX = Math.min(window.devicePixelRatio || 1, 1.25);
 let QUAL = 'auto'; try { QUAL = localStorage.getItem('sh_qual') || 'auto'; } catch (e) { }
-let PR = QUAL === 'low' ? 0.75 : PR_MAX;
+let PR = QUAL === 'low' ? 0.75 : (QUAL === 'high' ? PR_HI : PR_MAX);
 renderer.setPixelRatio(PR);
-renderer.shadowMap.enabled = QUAL !== 'low';
+renderer.shadowMap.enabled = QUAL === 'high';
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -90,7 +92,7 @@ scene.add(sky);
 const hemi = new THREE.HemisphereLight(0x8a7aa8, 0x3a2f2a, 1.0);
 scene.add(hemi);
 const dir = new THREE.DirectionalLight(0xff9a55, 2.4);
-dir.castShadow = QUAL !== 'low';
+dir.castShadow = QUAL === 'high';
 dir.shadow.mapSize.set(1024, 1024);
 dir.shadow.camera.left = -22; dir.shadow.camera.right = 22; dir.shadow.camera.top = 22; dir.shadow.camera.bottom = -22;
 dir.shadow.camera.near = 1; dir.shadow.camera.far = 140; dir.shadow.camera.updateProjectionMatrix();
@@ -138,7 +140,7 @@ function groundY(x, z) {
 const stdMats = {};
 function M(color, opts) {
   const key = color + (opts ? JSON.stringify(opts) : '');
-  if (!stdMats[key]) stdMats[key] = new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 1, metalness: 0, flatShading: true }, opts || {}));
+  if (!stdMats[key]) stdMats[key] = LMat(Object.assign({ color, roughness: 1, metalness: 0, flatShading: true }, opts || {}));
   return stdMats[key];
 }
 function addBox(parent, w, h, d, color, x, y, z) {
@@ -161,10 +163,10 @@ function addBox(parent, w, h, d, color, x, y, z) {
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
   g.computeVertexNormals();
-  const t = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }));
+  const t = new THREE.Mesh(g, LMat({ vertexColors: true, roughness: 1, flatShading: true }));
   t.receiveShadow = true; scene.add(t);
   // siluet puncak gunung di kejauhan
-  const peak = new THREE.Mesh(new THREE.ConeGeometry(80, 120, 7), new THREE.MeshStandardMaterial({ color: 0x1b2233, roughness: 1, flatShading: true }));
+  const peak = new THREE.Mesh(new THREE.ConeGeometry(80, 120, 7), LMat({ color: 0x1b2233, roughness: 1, flatShading: true }));
   peak.position.set(-10, 60, -190); scene.add(peak);
 })();
 
@@ -177,7 +179,7 @@ function addBox(parent, w, h, d, color, x, y, z) {
   for (let i = 0; i < N; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x6b5237, roughness: 1, flatShading: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  const m = new THREE.Mesh(g, LMat({ color: 0x6b5237, roughness: 1, flatShading: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   m.receiveShadow = true; scene.add(m);
 })();
 
@@ -227,9 +229,9 @@ function blockedSpot(x, z) {
     if (z > 26 && Math.abs(x) < 30 && R() < 0.5) continue;
     spots.push([x, z]);
   }
-  const trunks = new THREE.InstancedMesh(trunkG, new THREE.MeshStandardMaterial({ color: 0x4a3826, roughness: 1, flatShading: true }), spots.length);
-  const crowns = new THREE.InstancedMesh(crownG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true }), spots.length);
-  const crowns2 = new THREE.InstancedMesh(crown2G, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true }), spots.length);
+  const trunks = new THREE.InstancedMesh(trunkG, LMat({ color: 0x4a3826, roughness: 1, flatShading: true }), spots.length);
+  const crowns = new THREE.InstancedMesh(crownG, LMat({ color: 0xffffff, roughness: 1, flatShading: true }), spots.length);
+  const crowns2 = new THREE.InstancedMesh(crown2G, LMat({ color: 0xffffff, roughness: 1, flatShading: true }), spots.length);
   const o = new THREE.Object3D(), col = new THREE.Color();
   spots.forEach((s, i) => {
     const sc = rr(0.8, 1.5);
@@ -261,7 +263,7 @@ function blockedSpot(x, z) {
     if (Math.hypot(x - HUT.x, z - HUT.z) < 4) continue;
     pand.push([x, z]);
   }
-  const pm = new THREE.InstancedMesh(pg, new THREE.MeshStandardMaterial({ color: 0x5d8a36, side: THREE.DoubleSide, roughness: 0.9, flatShading: true }), pand.length);
+  const pm = new THREE.InstancedMesh(pg, LMat({ color: 0x5d8a36, side: THREE.DoubleSide, roughness: 0.9, flatShading: true }), pand.length);
   pand.forEach((s, i) => {
     const sc = rr(0.8, 1.6);
     o.position.set(s[0], terrainH(s[0], s[1]), s[1]); o.rotation.set(0, rr(0, 6.28), 0); o.scale.set(sc, sc, sc); o.updateMatrix();
@@ -271,7 +273,7 @@ function blockedSpot(x, z) {
 
   // batu
   const rg = new THREE.DodecahedronGeometry(0.6, 0);
-  const rocks = new THREE.InstancedMesh(rg, new THREE.MeshStandardMaterial({ color: 0x555049, roughness: 1, flatShading: true }), 40);
+  const rocks = new THREE.InstancedMesh(rg, LMat({ color: 0x555049, roughness: 1, flatShading: true }), 40);
   for (let i = 0; i < 40; i++) {
     const x = rr(-30, 30), z = rr(-30, 30), sc = rr(0.5, 1.6);
     o.position.set(x, terrainH(x, z) + 0.1, z); o.rotation.set(rr(0, 3), rr(0, 3), 0); o.scale.set(sc, sc * 0.6, sc); o.updateMatrix(); rocks.setMatrixAt(i, o.matrix);
@@ -318,7 +320,7 @@ function addLamp(x, y, z, intensity, dist) {
   addBox(g, 1.5, 0.9, 0.7, dark, 1.3, 0.75, -1.1);
   addBox(g, 1.6, 0.4, 0.45, dark, -0.4, 0.5, 1.4);
   // senter di meja
-  const sen = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.3, 8), new THREE.MeshStandardMaterial({ color: 0x2a2a2a, emissive: 0xffe9a0, emissiveIntensity: 0.6 }));
+  const sen = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.3, 8), LMat({ color: 0x2a2a2a, emissive: 0xffe9a0, emissiveIntensity: 0.6 }));
   sen.rotation.z = Math.PI / 2; sen.position.set(1.0, 1.25, -1.1); g.add(sen); window.__senter = sen;
   // papan nama
   const sg = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.7), new THREE.MeshBasicMaterial({ map: signTexture(['POS JAGA', 'Gunung Pandan'], 512, 140, '#3a2a1a') }));
@@ -351,7 +353,7 @@ const ACT = [];
 function person(o) {
   const g = new THREE.Group();
   const skin = M(o.skin || 0xc79a72);
-  const topMat = new THREE.MeshStandardMaterial({ color: o.top, roughness: 1, flatShading: true });
+  const topMat = LMat({ color: o.top, roughness: 1, flatShading: true });
   const body = new THREE.Group(); g.add(body);
   const add = (geo, mat, x, y, z, parent, shadow) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); if (shadow !== false) m.castShadow = true; (parent || g).add(m); return m; };
   add(new THREE.CapsuleGeometry(0.21, 0.5, 3, 8), topMat, 0, 1.12, 0, body);
@@ -823,8 +825,8 @@ function mkPandanGeo() {
     if (Math.hypot(s[0] - trailX(-66) - 1.9, s[1] + 66) < 2.4) return false;
     return true;
   });
-  const trunks = new THREE.InstancedMesh(g2[0], new THREE.MeshStandardMaterial({ color: 0x3a2b1c, roughness: 1, flatShading: true }), ok.length);
-  const crowns = new THREE.InstancedMesh(g2[1], new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true }), ok.length);
+  const trunks = new THREE.InstancedMesh(g2[0], LMat({ color: 0x3a2b1c, roughness: 1, flatShading: true }), ok.length);
+  const crowns = new THREE.InstancedMesh(g2[1], LMat({ color: 0xffffff, roughness: 1, flatShading: true }), ok.length);
   const o = new THREE.Object3D(), col = new THREE.Color();
   ok.forEach((s, i) => {
     const sc = rr(0.9, 1.7);
@@ -841,7 +843,7 @@ function mkPandanGeo() {
     if (Math.hypot(x - q[0], z - q[1]) < 2.4) continue;
     pand.push([x, z]);
   }
-  const pm = new THREE.InstancedMesh(pg, new THREE.MeshStandardMaterial({ color: 0x4f7a30, side: THREE.DoubleSide, roughness: 0.9, flatShading: true }), pand.length);
+  const pm = new THREE.InstancedMesh(pg, LMat({ color: 0x4f7a30, side: THREE.DoubleSide, roughness: 0.9, flatShading: true }), pand.length);
   pand.forEach((s, i) => { const sc = rr(0.8, 1.5); o.position.set(s[0], terrainH(s[0], s[1]), s[1]); o.rotation.set(0, rr(0, 6.28), 0); o.scale.set(sc, sc, sc); o.updateMatrix(); pm.setMatrixAt(i, o.matrix); });
   pm.frustumCulled = false; scene.add(pm);
 })();
@@ -858,7 +860,7 @@ function mkPandanGeo() {
   for (let i = 0; i < pts.length - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x3e3020, roughness: 1, flatShading: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  const m = new THREE.Mesh(g, LMat({ color: 0x3e3020, roughness: 1, flatShading: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   m.receiveShadow = true; scene.add(m);
 })();
 
@@ -874,7 +876,7 @@ let posPaper = null;
   addBox(g, 0.12, 1.2, 3.0, wood, 1.75, 1.0, 0);
   addBox(g, 0.5, 0.1, 2.4, wood, 1.35, 0.55, 0);
   addBox(g, 0.4, 0.5, 2.4, dark, 1.35, 0.3, 0);
-  posPaper = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.24), new THREE.MeshStandardMaterial({ color: 0xe6dcbc, emissive: 0x5a5030, emissiveIntensity: 0.6, roughness: 1, side: THREE.DoubleSide }));
+  posPaper = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.24), LMat({ color: 0xe6dcbc, emissive: 0x5a5030, emissiveIntensity: 0.6, roughness: 1, side: THREE.DoubleSide }));
   posPaper.rotation.x = -Math.PI / 2; posPaper.position.set(1.3, 0.62, 0.3); g.add(posPaper);
   // papan nama di tepi jalur
   const sx = trailX(POS1.z) + 2.3;
@@ -894,9 +896,9 @@ const tapes = [];
 (function buildMarkerTree() {
   const y = terrainH(MTREE.x, MTREE.z), g = new THREE.Group(); g.position.set(MTREE.x, y, MTREE.z); scene.add(g);
   const t = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.34, 4.6, 7), M(0x3a2b1c)); t.position.y = 2.3; t.castShadow = true; g.add(t);
-  const c = new THREE.Mesh(new THREE.IcosahedronGeometry(2.0, 0), new THREE.MeshStandardMaterial({ color: 0x24391f, roughness: 1, flatShading: true })); c.position.y = 5.4; g.add(c);
+  const c = new THREE.Mesh(new THREE.IcosahedronGeometry(2.0, 0), LMat({ color: 0x24391f, roughness: 1, flatShading: true })); c.position.y = 5.4; g.add(c);
   for (let i = 0; i < 4; i++) {
-    const a = -1.2 - i * 0.7, tp = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.34, 0.05), new THREE.MeshStandardMaterial({ color: 0xd11a1a, emissive: 0x550808, roughness: 1 }));
+    const a = -1.2 - i * 0.7, tp = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.34, 0.05), LMat({ color: 0xd11a1a, emissive: 0x550808, roughness: 1 }));
     tp.position.set(Math.cos(a) * 0.36, 1.5 + i * 0.22, Math.sin(a) * 0.36 * -1); tp.rotation.y = -a + Math.PI / 2; tp.visible = false; g.add(tp); tapes.push(tp);
   }
   circles.push({ x: MTREE.x, z: MTREE.z, r: 0.5 });
@@ -905,7 +907,7 @@ function showTapes(n) { tapes.forEach((t, i) => { t.visible = i < n; }); }
 
 /* selendang di ranting */
 function mkScarf(w, h) {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h, 1, 6), new THREE.MeshStandardMaterial({ color: 0xbfeec4, emissive: 0x6fcf8f, emissiveIntensity: 0.75, roughness: 1, side: THREE.DoubleSide, flatShading: true }));
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h, 1, 6), LMat({ color: 0xbfeec4, emissive: 0x6fcf8f, emissiveIntensity: 0.75, roughness: 1, side: THREE.DoubleSide, flatShading: true }));
   return m;
 }
 const SCARF = { x: trailX(-66) + 1.9, z: -66 };
@@ -919,14 +921,14 @@ const scarfMesh = mkScarf(0.34, 1.3); scarfMesh.position.set(-0.55, 1.75, 0); sc
 
 /* gelang benang */
 const BRACE = { x: trailX(-58) + 2.3, z: -58 };
-const brace = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.025, 6, 12), new THREE.MeshStandardMaterial({ color: 0x7fe89f, emissive: 0x3fbf6f, emissiveIntensity: 0.9, roughness: 1 }));
+const brace = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.025, 6, 12), LMat({ color: 0x7fe89f, emissive: 0x3fbf6f, emissiveIntensity: 0.9, roughness: 1 }));
 brace.rotation.x = -Math.PI / 2 + 0.3; brace.position.set(BRACE.x, terrainH(BRACE.x, BRACE.z) + 0.16, BRACE.z); brace.visible = false; scene.add(brace);
 const braceGlow = mkGlow(0x9fffbf, 1.0); braceGlow.position.copy(brace.position); braceGlow.visible = false; scene.add(braceGlow);
 
 /* senter Dinda yang jatuh */
 const dLamp = new THREE.Group(); dLamp.visible = false; scene.add(dLamp);
 (function () {
-  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.26, 8), new THREE.MeshStandardMaterial({ color: 0x8a2f3a, emissive: 0xffe9a0, emissiveIntensity: 0.7 })); c.rotation.z = Math.PI / 2; dLamp.add(c);
+  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.26, 8), LMat({ color: 0x8a2f3a, emissive: 0xffe9a0, emissiveIntensity: 0.7 })); c.rotation.z = Math.PI / 2; dLamp.add(c);
   const beam = new THREE.Mesh(new THREE.ConeGeometry(0.9, 4.2, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xfff0b0, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false }));
   beam.rotation.z = -Math.PI / 2; beam.position.x = 2.3; dLamp.add(beam);
 })();
@@ -934,11 +936,11 @@ const dLamp = new THREE.Group(); dLamp.visible = false; scene.add(dLamp);
 
 /* sosok berselendang */
 const fig = (function () {
-  const g = new THREE.Group(), dark = new THREE.MeshStandardMaterial({ color: 0x07090a, roughness: 1, flatShading: true });
+  const g = new THREE.Group(), dark = LMat({ color: 0x07090a, roughness: 1, flatShading: true });
   const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
   add(new THREE.CylinderGeometry(0.16, 0.42, 1.55, 8), dark, 0, 0.8, 0);
   add(new THREE.CylinderGeometry(0.2, 0.16, 0.5, 8), dark, 0, 1.7, 0);
-  add(new THREE.SphereGeometry(0.15, 8, 6), new THREE.MeshStandardMaterial({ color: 0x151c19, roughness: 1 }), 0, 2.08, 0);
+  add(new THREE.SphereGeometry(0.15, 8, 6), LMat({ color: 0x151c19, roughness: 1 }), 0, 2.08, 0);
   const hair = add(new THREE.CapsuleGeometry(0.2, 1.15, 3, 8), dark, 0, 1.72, 0.1); hair.scale.set(1, 1, 0.55);
   add(new THREE.CapsuleGeometry(0.05, 0.9, 3, 6), dark, -0.27, 1.55, 0.06);
   add(new THREE.CapsuleGeometry(0.05, 0.9, 3, 6), dark, 0.27, 1.55, 0.06);
@@ -965,13 +967,13 @@ const clFlames = [], clSmoke = { pts: null, n: 30 };
 let photoMesh = null;
 (function buildClearing() {
   const g = clearing;
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(34, 36), new THREE.MeshStandardMaterial({ color: 0x223226, roughness: 1, flatShading: true })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; g.add(ground);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(34, 36), LMat({ color: 0x223226, roughness: 1, flatShading: true })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; g.add(ground);
   const bt = new THREE.Group(); bt.position.set(-3, 0, -10); g.add(bt);
   const bark = M(0x2b2219);
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2.3, 9, 9), bark); trunk.position.y = 4.5; trunk.castShadow = true; bt.add(trunk);
   for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2, r = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.7, 4, 5), bark); r.position.set(Math.cos(a) * 2.3, 1.5, Math.sin(a) * 2.3); r.rotation.set(Math.sin(a) * 0.4, 0, -Math.cos(a) * 0.4); bt.add(r); }
   [[0, 12, 0, 6.5], [-5, 11, 2, 5], [5, 11.5, -1, 5.5], [0, 13.5, 4, 4.5], [2, 11, -5, 5]].forEach(c => {
-    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(c[3], 0), new THREE.MeshStandardMaterial({ color: 0x1b2e20, roughness: 1, flatShading: true })); m.position.set(c[0], c[1], c[2]); bt.add(m);
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(c[3], 0), LMat({ color: 0x1b2e20, roughness: 1, flatShading: true })); m.position.set(c[0], c[1], c[2]); bt.add(m);
   });
   for (let i = 0; i < 34; i++) { const a = rr(0, 6.28), r = rr(1.6, 7), h = rr(4, 9), m = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, h, 4), M(0x3a2e22)); m.position.set(Math.cos(a) * r, 9.5 - h / 2, Math.sin(a) * r); bt.add(m); }
   // altar
@@ -989,12 +991,12 @@ let photoMesh = null;
   }
   // bunga
   const fg = new THREE.CircleGeometry(0.11, 5); fg.rotateX(-Math.PI / 2);
-  const fl = new THREE.InstancedMesh(fg, new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x1a1a1a, roughness: 1, side: THREE.DoubleSide }), 90);
+  const fl = new THREE.InstancedMesh(fg, LMat({ color: 0xffffff, emissive: 0x1a1a1a, roughness: 1, side: THREE.DoubleSide }), 90);
   const o = new THREE.Object3D(), col = new THREE.Color();
   for (let i = 0; i < 90; i++) { const a = rr(0, 6.28), r = rr(2.2, 4.2); o.position.set(Math.cos(a) * r, 0.04, -5.4 + Math.sin(a) * r); o.rotation.set(0, rr(0, 6), 0); o.scale.set(1, 1, 1); o.updateMatrix(); fl.setMatrixAt(i, o.matrix); col.setHex(R() < 0.6 ? 0xf2f0e6 : 0xf2c94a); fl.setColorAt(i, col); }
   fl.frustumCulled = false; g.add(fl);
   // foto
-  photoMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.36), new THREE.MeshStandardMaterial({ color: 0xefe6c8, emissive: 0x6a5f38, emissiveIntensity: 0.7, roughness: 1, side: THREE.DoubleSide }));
+  photoMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.36), LMat({ color: 0xefe6c8, emissive: 0x6a5f38, emissiveIntensity: 0.7, roughness: 1, side: THREE.DoubleSide }));
   photoMesh.rotation.x = -Math.PI / 2; photoMesh.rotation.z = 0.5; photoMesh.position.set(1.9, 0.05, -3.3); g.add(photoMesh);
   // asap dupa
   const sp = new Float32Array(clSmoke.n * 3); for (let i = 0; i < clSmoke.n; i++) { sp[i * 3] = -0.6 + rr(0, 0.6); sp[i * 3 + 1] = 1.3 + rr(0, 2.6); sp[i * 3 + 2] = -4.6; }
@@ -1002,11 +1004,11 @@ let photoMesh = null;
   clSmoke.pts = new THREE.Points(sg, new THREE.PointsMaterial({ size: 0.28, color: 0xaaaaaa, transparent: true, opacity: 0.22, depthWrite: false })); clSmoke.pts.frustumCulled = false; g.add(clSmoke.pts);
   // pohon melingkar
   const g2 = mkTreeGeos(), N = 46;
-  const tr = new THREE.InstancedMesh(g2[0], new THREE.MeshStandardMaterial({ color: 0x33261a, roughness: 1, flatShading: true }), N);
-  const cr = new THREE.InstancedMesh(g2[1], new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true }), N);
+  const tr = new THREE.InstancedMesh(g2[0], LMat({ color: 0x33261a, roughness: 1, flatShading: true }), N);
+  const cr = new THREE.InstancedMesh(g2[1], LMat({ color: 0xffffff, roughness: 1, flatShading: true }), N);
   for (let i = 0; i < N; i++) { const a = i / N * Math.PI * 2 + rr(-0.05, 0.05), r = rr(24, 34), sc = rr(1.0, 1.7); o.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); o.rotation.set(0, rr(0, 6), 0); o.scale.set(sc, sc * rr(0.9, 1.3), sc); o.updateMatrix(); tr.setMatrixAt(i, o.matrix); cr.setMatrixAt(i, o.matrix); col.setHex(0x1f3322).lerp(new THREE.Color(0x33452a), R()); cr.setColorAt(i, col); }
   [tr, cr].forEach(m => { m.frustumCulled = false; g.add(m); });
-  const pgm = new THREE.InstancedMesh(mkPandanGeo(), new THREE.MeshStandardMaterial({ color: 0x3f6a2a, side: THREE.DoubleSide, roughness: 0.9, flatShading: true }), 26);
+  const pgm = new THREE.InstancedMesh(mkPandanGeo(), LMat({ color: 0x3f6a2a, side: THREE.DoubleSide, roughness: 0.9, flatShading: true }), 26);
   for (let i = 0; i < 26; i++) { const a = rr(0, 6.28), r = rr(9, 21), sc = rr(0.8, 1.5); o.position.set(Math.cos(a) * r, 0, Math.sin(a) * r - 4); o.rotation.set(0, rr(0, 6), 0); o.scale.set(sc, sc, sc); o.updateMatrix(); pgm.setMatrixAt(i, o.matrix); }
   pgm.frustumCulled = false; g.add(pgm);
   circles.push({ x: CL.x - 3, z: CL.z - 10, r: 2.9 });
@@ -1370,7 +1372,7 @@ const MODELS = {
 const gltfLoader = new GLTFLoader(), fbxLoader = new FBXLoader();
 let animToastShown = false;
 // FBXLoader menganggap warna file sebagai sRGB, padahal Blender menyimpannya linear. Akibatnya warna jadi sangat gelap.
-// Di sini warnanya dikembalikan lalu bahan diganti MeshStandardMaterial agar cocok dengan cahaya dunia game.
+// Di sini warnanya dikembalikan lalu bahan diganti Lambert (lebih ringan) agar cocok dengan cahaya dunia game.
 const FBX_NAMED = { tietexture: 0x2a1218, details: 0x8a7a4a, eyes: 0x0b0b0b };
 function prepFbx(root) {
   root.traverse(o => {
@@ -1379,13 +1381,13 @@ function prepFbx(root) {
     const out = mats.map(m => {
       if (!m) return m;
       let mat;
-      if (m.map) mat = new THREE.MeshStandardMaterial({ map: m.map, roughness: 0.85, metalness: 0 });
+      if (m.map) mat = LMat({ map: m.map, roughness: 0.85, metalness: 0 });
       else {
         const c = m.color ? m.color.clone() : new THREE.Color(0xffffff);
         c.convertLinearToSRGB();
         const key = String(m.name || '').toLowerCase().replace(/\s|\.\d+$/g, '');
         if (FBX_NAMED[key] !== undefined && c.r > 0.98 && c.g > 0.98 && c.b > 0.98) c.setHex(FBX_NAMED[key]);
-        mat = new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, metalness: 0 });
+        mat = LMat({ color: c, roughness: 0.85, metalness: 0 });
       }
       mat.name = m.name || '';
       return mat;
@@ -1393,7 +1395,7 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v10';
+const BUILD = 'v11';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
@@ -1472,7 +1474,7 @@ function bandColor(mesh, P) {
     c.setHex(hex); cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
   }
   g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
-  mesh.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
+  mesh.material = LMat({ vertexColors: true, roughness: 0.9, metalness: 0 });
   return true;
 }
 function fixModelColors(root, cfg, fname) {
@@ -1496,7 +1498,7 @@ function fixModelColors(root, cfg, fname) {
       else if (/shirt|top|cloth|jacket|sweater|suit|coat|torso|sleeve/.test(n)) c = P.top;
       else c = [P.skin, P.top, P.bottom, P.hair, P.shoe][(i + fixed) % 5];
       fixed++;
-      return new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, metalness: 0 });
+      return LMat({ color: c, roughness: 0.9, metalness: 0 });
     });
     if (fixed && meshes.length === 1 && mats.length === 1 && bandColor(o, P)) return;
     o.material = arr ? out : out[0];
@@ -1563,6 +1565,7 @@ gltfLoader.load('pohon.glb', gltf => {
   try {
     const variants = []; gltf.scene.children.forEach(ch => { if (/^Tree_/.test(ch.name)) variants.push(ch); });
     if (!variants.length) return;
+    gltf.scene.traverse(o => { if (o.isMesh && o.material && o.material.map) { const m = o.material; const n = new THREE.MeshLambertMaterial({ map: m.map, alphaTest: m.alphaTest || 0, side: m.side }); n.name = m.name; o.material = n; } });
     const hs = heroSpots(), r = hs.r;
     hs.spots.forEach((p, i) => {
       const t = variants[i % variants.length].clone(true), k = 0.85 + r() * 0.5;
@@ -1573,7 +1576,7 @@ gltfLoader.load('pohon.glb', gltf => {
     modelState.pohon = heroTrees.length + 'x'; updVer();
   } catch (e) { console.warn('pohon.glb gagal dipasang:', e); }
 }, undefined, () => { modelState.pohon = 'x'; updVer(); });
-let heroT = 0, HERO_D = 65;
+let heroT = 0, HERO_D = QUAL === 'high' ? 70 : 50;
 function updateHero(dt) {
   heroT -= dt; if (heroT > 0 || !heroTrees.length) return; heroT = 0.4;
   for (const t of heroTrees) t.visible = QUAL !== 'low' && Math.hypot(t.position.x - raka.x, t.position.z - raka.z) < HERO_D;
@@ -1613,8 +1616,8 @@ function qualLabel() { return QUAL === 'auto' ? 'otomatis' : (QUAL === 'high' ? 
 function cycleQual() {
   QUAL = QUAL === 'auto' ? 'high' : (QUAL === 'high' ? 'low' : 'auto');
   try { localStorage.setItem('sh_qual', QUAL); } catch (e) { }
-  PR = QUAL === 'low' ? 0.75 : PR_MAX; renderer.setPixelRatio(PR);
-  const sh = QUAL !== 'low'; renderer.shadowMap.enabled = sh; dir.castShadow = sh;
+  PR = QUAL === 'low' ? 0.75 : (QUAL === 'high' ? PR_HI : PR_MAX); renderer.setPixelRatio(PR); HERO_D = QUAL === 'high' ? 70 : 50;
+  const sh = QUAL === 'high'; renderer.shadowMap.enabled = sh; dir.castShadow = sh;
   scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) m.needsUpdate = true; }); });
   resize();
 }
