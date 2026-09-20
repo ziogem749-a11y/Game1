@@ -1393,7 +1393,7 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v9';
+const BUILD = 'v10';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
@@ -1543,15 +1543,16 @@ const heroTrees = [];
 function heroSpots() {
   let sd = 4242; const r = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
   const spots = [];
-  const far = (x, z) => !spots.some(p => Math.hypot(p[0] - x, p[1] - z) < 7.5);
-  for (let n = 0; n < 400 && spots.length < 9; n++) {           // Bab 1: sekitar pondok dan gapura
-    const z = -24 + r() * 42, sd2 = r() < 0.5 ? -1 : 1, x = trailX(z) + sd2 * (9 + r() * 6);
-    if (Math.abs(x) > 31 || Math.hypot(x - HUT.x, z - HUT.z) < 8 || Math.hypot(x - GATE.x, z - GATE.z) < 7 || !far(x, z)) continue;
+  const far = (x, z) => !spots.some(p => Math.hypot(p[0] - x, p[1] - z) < 6);
+  for (let n = 0; n < 2500 && spots.length < 24; n++) {          // Bab 1: sekitar pondok dan gapura
+    const z = -24 + r() * 44, sd2 = r() < 0.5 ? -1 : 1, x = trailX(z) + sd2 * (8 + r() * 10);
+    if (Math.abs(x) > 32 || Math.hypot(x - HUT.x, z - HUT.z) < 8 || Math.hypot(x - GATE.x, z - GATE.z) < 7 || !far(x, z)) continue;
     spots.push([x, z]);
   }
   const sidePoly = [[SIDE0.x, SIDE0.z]].concat(SIDE);
-  for (let n = 0; n < 800 && spots.length < 9 + 12; n++) {       // Bab 2: sepanjang jalur mendaki
-    const z = -34 - r() * 100, sd2 = r() < 0.5 ? -1 : 1, x = trailX(z) + sd2 * (6.8 + r() * 5);
+  const b1 = spots.length;
+  for (let n = 0; n < 4000 && spots.length < b1 + 34; n++) {     // Bab 2: sepanjang jalur mendaki
+    const z = -34 - r() * 100, sd2 = r() < 0.5 ? -1 : 1, x = trailX(z) + sd2 * (6.8 + r() * 6.5);
     const q = nearOnPoly(sidePoly, x, z);
     if (Math.hypot(x - POS1.x, z - POS1.z) < 7 || Math.hypot(x - q[0], z - q[1]) < 6 || Math.hypot(x - MTREE.x, z - MTREE.z) < 4 || Math.hypot(x - SCARF.x, z - SCARF.z) < 4 || !far(x, z)) continue;
     spots.push([x, z]);
@@ -1572,10 +1573,10 @@ gltfLoader.load('pohon.glb', gltf => {
     modelState.pohon = heroTrees.length + 'x'; updVer();
   } catch (e) { console.warn('pohon.glb gagal dipasang:', e); }
 }, undefined, () => { modelState.pohon = 'x'; updVer(); });
-let heroT = 0;
+let heroT = 0, HERO_D = 65;
 function updateHero(dt) {
   heroT -= dt; if (heroT > 0 || !heroTrees.length) return; heroT = 0.4;
-  for (const t of heroTrees) t.visible = QUAL !== 'low' && Math.hypot(t.position.x - raka.x, t.position.z - raka.z) < 60;
+  for (const t of heroTrees) t.visible = QUAL !== 'low' && Math.hypot(t.position.x - raka.x, t.position.z - raka.z) < HERO_D;
 }
 
 
@@ -1697,7 +1698,7 @@ function loop(now) {
   if (raw > 0 && raw < 0.5) {
     avg += raw; avgN++;
     if (avgN >= 60) {
-      if (QUAL === 'auto' && avg / avgN > 0.045) { if (PR > 0.9) { PR = Math.max(0.75, PR - 0.25); renderer.setPixelRatio(PR); resize(); } else if (renderer.shadowMap.enabled) { renderer.shadowMap.enabled = false; dir.castShadow = false; } }
+      if (QUAL === 'auto' && avg / avgN > 0.045) { if (HERO_D > 45) { HERO_D -= 15; } else if (PR > 0.9) { PR = Math.max(0.75, PR - 0.25); renderer.setPixelRatio(PR); resize(); } else if (renderer.shadowMap.enabled) { renderer.shadowMap.enabled = false; dir.castShadow = false; } }
       avg = 0; avgN = 0;
     }
   }
