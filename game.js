@@ -541,6 +541,7 @@ function auInit() {
     const cg = c.createGain(); cg.gain.value = 0.005; co.connect(cg); cg.connect(AU.master); co.start();
     const cl = c.createOscillator(); cl.type = 'square'; cl.frequency.value = 7; const clg = c.createGain(); clg.gain.value = 0.005;
     cl.connect(clg); clg.connect(cg.gain); cl.start();
+    loadSamples();
   } catch (e) { AU.ctx = null; }
 }
 function tone(f, d, type, v, f2, delay) {
@@ -632,7 +633,7 @@ touch.addEventListener('pointermove', e => {
     mv.x = dx * k / Rr; mv.y = -dy * k / Rr; el.knob.style.transform = 'translate(' + (dx * k) + 'px,' + (dy * k) + 'px)';
   } else if (e.pointerId === lookId) {
     const dx = e.clientX - lookP.x, dy = e.clientY - lookP.y; lookP.x = e.clientX; lookP.y = e.clientY;
-    camYaw -= dx * 0.006; camPitch = clamp(camPitch + dy * 0.004, -0.05, 0.9);
+    camYaw -= dx * 0.006 * SENS; camPitch = clamp(camPitch + dy * 0.004 * SENS, -0.05, 0.9);
   }
 });
 function endPtr(e) {
@@ -816,6 +817,7 @@ Object.assign(sfx, {
   owl() { tone(380, 0.5, 'sine', 0.1, 320); tone(360, 0.6, 'sine', 0.1, 300, 0.7); }
 });
 function resetWorld() {
+  CH.on = false; chaseHud(false);
   TIMERS.length = 0; setB2Lights(false); CORR.mode = 'none'; CORR.pts = null;
   BOUNDS.x0 = -33; BOUNDS.x1 = 33; BOUNDS.z0 = -24.5; BOUNDS.z1 = 24;
   clearing.visible = false; hideFig(); wispS.on = false; wisp.visible = false; dLamp.visible = false; brace.visible = false; braceGlow.visible = false;
@@ -825,7 +827,7 @@ function resetWorld() {
 }
 function startBab2() {
   resetInput(); hidePanel(); resetWorld();
-  if (!S.finds) S.finds = []; S.finds.length = 0;
+  if (!S.finds) S.finds = []; if (!CONT) S.finds.length = 0; CONT = false;
   state = 'play'; el.fade.style.transition = 'none'; el.fade.style.opacity = '1';
   startScript(bab2());
 }
@@ -1172,6 +1174,7 @@ function figBehind() {
 let shakeT = 0; function G_shake(v) { shakeT = Math.max(shakeT, v); }
 
 function* bab2() {
+  S.ch = 2; saveGame();
   ctrl = 'none'; setObj(''); dlgHide(); resetInput(); TIMERS.length = 0;
   el.fade.style.transition = 'none'; el.fade.style.opacity = '1';
   if (!S.finds) S.finds = [];
@@ -1343,15 +1346,11 @@ function* bab2() {
     CORR.mode = 'poly'; CORR.w = 3.0; CORR.pts = [[trailX(-58), -58], [SIDE0.x, SIDE0.z]].concat(SIDE);
     followCam(); ctrl = 'walk'; bayu.follow = true; bayu.off = [0.8, 6.0]; bayu.watch = false; setObj('Ikuti cahaya hijau. Cari Dinda.');
   });
-  for (let i = 0; i < SIDE.length; i++) {
-    const wp = SIDE[i], nx = SIDE[Math.min(SIDE.length - 1, i + 1)];
-    yield { init() { wispS.tx = nx[0]; wispS.tz = nx[1]; }, test: () => true };
-    yield GOTO(wp[0], wp[1], 3.0, true);
-    if (i === 0) yield DO(() => { sfx.whisper(); });
-    if (i === 1) yield DO(() => { toast('“Ka... sini...”', 2600); sfx.whisper(); addFear(0.08); });
-    if (i === 2) yield DO(() => { bayu.follow = false; bayu.tx = null; addFear(0.06); });
-    if (i === 3) yield DO(() => { showFig(SIDE[5][0] + 2, SIDE[5][1] - 8); sfx.sting(); addFear(0.15); flicker(0.8); later(2.6, () => { hideFig(); flicker(0.5); }); });
-  }
+  yield { init() { wispS.tx = SIDE[1][0]; wispS.tz = SIDE[1][1]; }, test: () => true };
+  yield GOTO(SIDE0.x, SIDE0.z, 3.2, true);
+  yield DO(() => { sfx.whisper(); toast('“Ka... sini...”', 2600); addFear(0.1); bayu.follow = false; bayu.tx = null; });
+  yield SAY('Narator', 'Cahaya hijau itu bergerak menjauh. Dari belakangmu, sesuatu berlari mendekat di antara pepohonan.');
+  yield CHASE([[SIDE0.x, SIDE0.z]].concat(SIDE), { gap: 8, speed: 4.9 });
   yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); wispS.tx = SIDE[SIDE.length - 1][0] - 4; wispS.tz = SIDE[SIDE.length - 1][1] - 4; });
   yield SAY('Narator', 'Cahaya hijau itu melayang naik, lalu padam di sela kabut. Jalan setapak berakhir di dinding pandan yang rapat.');
   yield* blink(() => { enterClearing(); });
@@ -1476,7 +1475,7 @@ function* bab3() {
     altarBloom.visible = false; altarScarf.visible = false; hideFig();
     place(raka, ALT.x + 0.4, ALT.z + 5.6, Math.PI); place(dinda, ALT.x + 0.8, ALT.z + 2.7, Math.PI); dinda.follow = false; dinda.watch = false; dindaScarf.visible = true; bayuScarf.visible = false;
     place(bayu, ALT.x + 2.4, ALT.z + 6.4, 0); faceTo(bayu, raka.x, raka.z); bayu.follow = false; bayu.watch = true;
-    camYaw = 0; followCam(); snapCam(); saveGame();
+    S.ch = 3; camYaw = 0; followCam(); snapCam(); saveGame();
   });
   yield CARD('Bab 3', 'Yang Keempat', 3.4);
   yield FADE(false, 2.2);
@@ -1594,6 +1593,7 @@ function* bab3() {
 function* bab4(END) {
   ctrl = 'none'; setObj(''); dlgHide(); resetInput(); TIMERS.length = 0;
   yield DO(() => {
+    S.ch = 4; saveGame();
     el.fade.style.transition = 'none'; el.fade.style.background = '#000'; el.fade.style.opacity = '1';
     resetWorld(); state = 'play'; hidePanel(); clearing.visible = false;
     setMood('fajar'); BOUNDS.z0 = -38; CORR.mode = 'none';
@@ -1675,7 +1675,7 @@ function showCredits() {
 }
 function startBab3() {
   resetInput(); hidePanel(); resetWorld();
-  if (!S.finds) S.finds = []; if (!S.items) S.items = [];
+  if (!S.finds) S.finds = []; if (!S.items) S.items = []; CONT = false;
   state = 'play'; el.fade.style.transition = 'none'; el.fade.style.opacity = '1';
   startScript(bab3());
 }
@@ -1821,6 +1821,178 @@ const mpStyle = document.createElement('style');
 mpStyle.textContent = '.board input{width:100%;padding:12px;border-radius:10px;border:2px solid rgba(230,234,219,.5);background:#0b1210;color:#fff;font:800 26px monospace;letter-spacing:.3em;text-transform:uppercase;text-align:center;-webkit-user-select:text;user-select:text;touch-action:auto;margin:6px 0}';
 if (document.head) document.head.appendChild(mpStyle);
 
+/* =====================  KEJAR-KEJARAN: LARI (SPRINT) + STAMINA  ===================== */
+const CH = { on: false, tries: 0, gap: 99 };
+let sprintOn = false, stamina = 1, exhausted = false, stumbleT = 0;
+const sprintWrap = document.createElement('div');
+Object.assign(sprintWrap.style, { position: 'fixed', right: '18px', bottom: '96px', zIndex: '12', display: 'none', touchAction: 'none' });
+sprintWrap.innerHTML = '<button id="sprintBtn" style="width:74px;height:74px;border-radius:50%;border:2px solid #e6eadb;background:rgba(8,12,10,.85);color:#fff;font-size:30px;touch-action:none">🏃</button><div style="height:6px;border-radius:3px;background:rgba(255,255,255,.2);margin-top:6px;overflow:hidden"><i id="stamBar" style="display:block;height:100%;width:100%;background:#f2b84b"></i></div>';
+if (document.body) document.body.appendChild(sprintWrap);
+{
+  const sb = $('#sprintBtn');
+  sb.addEventListener('pointerdown', e => { e.preventDefault(); sprintOn = true; });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => sb.addEventListener(t, () => { sprintOn = false; }));
+}
+function chaseHud(on) { sprintWrap.style.display = on ? 'block' : 'none'; if (!on) { sprintOn = false; stamina = 1; exhausted = false; stumbleT = 0; } }
+function CHASE(pts, opt) {
+  const o = Object.assign({ gap: 9, speed: 4.6, endR: 3.2, maxTries: 6 }, opt || {});
+  const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const L = cum[cum.length - 1];
+  const d0x = (pts[1][0] - pts[0][0]) / (cum[1] || 1), d0z = (pts[1][1] - pts[0][1]) / (cum[1] || 1);
+  const proj = (x, z) => {
+    let best = 0, bd = 1e9;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz || 1;
+      const t = clamp(((x - a[0]) * dx + (z - a[1]) * dz) / l2, 0, 1), qx = a[0] + dx * t, qz = a[1] + dz * t, d = Math.hypot(x - qx, z - qz);
+      if (d < bd) { bd = d; best = cum[i] + Math.sqrt(l2) * t; }
+    }
+    return best;
+  };
+  const at = s => {
+    if (s < 0) return [pts[0][0] + d0x * s, pts[0][1] + d0z * s];
+    s = Math.min(s, L); let i = 0; while (i < cum.length - 2 && s > cum[i + 1]) i++;
+    const t = (s - cum[i]) / ((cum[i + 1] - cum[i]) || 1); return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t];
+  };
+  let se = 0, tries = 0, stT = 0, hit = false;
+  const resetRun = () => {
+    const p0 = pts[0]; ME.x = p0[0]; ME.z = p0[1]; ME.y = groundY(p0[0], p0[1]); vel.x = vel.z = 0; stamina = 1; exhausted = false; sprintOn = false; stumbleT = 0;
+    se = -o.gap - tries * 2.5; hit = false; ctrl = 'walk';
+  };
+  return {
+    init() {
+      CH.on = true; CH.tries = 0; chaseHud(true); followCam(); tries = 0;
+      setObj('LARI! Jangan berhenti. Tahan tombol 🏃 untuk berlari (napasmu terbatas).');
+      resetRun(); const p = at(se); showFig(p[0], p[1]); sfx.sting(); flicker(0.8);
+    },
+    test(dt) {
+      if (hit) return false;
+      if (window.__AUTO && !window.__CHASEFAIL) { const e = pts[pts.length - 1]; ME.x = e[0]; ME.z = e[1]; }
+      const sp = proj(ME.x, ME.z);
+      if (sp >= L - o.endR) return true;
+      const moving = Math.hypot(vel.x, vel.z) > 0.6;
+      if (lookingBack() && moving) stumbleT = Math.max(stumbleT, 0.35);          // menoleh saat lari = tersandung
+      const spdE = o.speed * (tries >= 3 ? 0.9 : 1) * (tries >= 5 ? 0.85 : 1);
+      se = Math.min(se + spdE * dt, sp - 0.2);
+      const p = at(se); fig.g.position.set(p[0], groundY(p[0], p[1]), p[1]); figOn = true; fig.g.visible = true;
+      const gap = sp - se; CH.gap = gap;
+      fear = Math.max(fear, clamp(1 - gap / 12, 0, 0.95));
+      stT -= dt; if (stT <= 0) { stT = 0.36; sfx.stepsBehind(1, clamp(1.2 - gap / 14, 0.15, 1)); }
+      const bar = $('#stamBar'); if (bar) bar.style.width = Math.round(stamina * 100) + '%';
+      if (gap < 1.7) {                                                            // tertangkap
+        tries++; CH.tries = tries; hit = true; ctrl = 'none'; resetInput(); vel.x = vel.z = 0;
+        if (tries >= o.maxTries) { toast('Cahaya hijau menuntunmu keluar...', 3500); hit = false; return true; }
+        sfx.sting(); G_shake(1); flicker(1.2); addFear(0.2);
+        el.fade.style.transition = 'opacity 0.25s'; el.fade.style.opacity = '1';
+        later(1.0, () => { resetRun(); el.fade.style.transition = 'opacity 0.7s'; el.fade.style.opacity = '0'; toast('Dia menangkapmu... Coba lagi. Jangan berhenti, jangan menoleh.', 3500); });
+      }
+      return false;
+    },
+    done() { CH.on = false; chaseHud(false); hideFig(); ctrl = 'none'; resetInput(); setObj(''); }
+  };
+}
+
+/* =====================  PENGATURAN, LANJUTKAN, PETUNJUK  ===================== */
+let TXT = 1, SENS = 1, CONT = false;
+try { TXT = parseFloat(localStorage.getItem('sh_txt')) || 1; SENS = parseFloat(localStorage.getItem('sh_sens')) || 1; } catch (e) { }
+const uiStyle = document.createElement('style'); if (document.head) document.head.appendChild(uiStyle);
+function applyUi() { uiStyle.textContent = '#dlg .txt{font-size:' + Math.round(18 * TXT) + 'px !important}#dlg .who{font-size:' + Math.round(15 * TXT) + 'px !important}#choices button{font-size:' + Math.round(16 * TXT) + 'px !important}'; }
+applyUi();
+function txtLabel() { return TXT < 0.95 ? 'kecil' : (TXT < 1.15 ? 'sedang' : 'besar'); }
+function sensLabel() { return SENS < 0.85 ? 'pelan' : (SENS < 1.15 ? 'normal' : 'cepat'); }
+function cycleTxt() { TXT = TXT < 0.95 ? 1 : (TXT < 1.15 ? 1.3 : 0.85); try { localStorage.setItem('sh_txt', String(TXT)); } catch (e) { } applyUi(); }
+function cycleSens() { SENS = SENS < 0.85 ? 1 : (SENS < 1.15 ? 1.5 : 0.6); try { localStorage.setItem('sh_sens', String(SENS)); } catch (e) { } }
+let SETBACK = 'title';
+function showSettings(back) {
+  if (back) SETBACK = back;
+  showPanel('<div class="board"><h1>Pengaturan</h1><button class="cta alt" data-do="sTxt">Ukuran teks: ' + txtLabel() + '</button><button class="cta alt" data-do="sSens">Sensitivitas kamera: ' + sensLabel() + '</button><button class="cta alt" data-do="sBright">Kecerahan: ' + brightLabel() + '</button><button class="cta alt" data-do="sQual">Kualitas grafis: ' + qualLabel() + '</button><button class="cta" data-do="sBack">Kembali</button></div>');
+}
+function readSave() { try { const o = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); return (o && o.ch) ? o : null; } catch (e) { return null; } }
+function startBab4() {
+  resetInput(); hidePanel(); resetWorld();
+  state = 'play'; el.fade.style.transition = 'none'; el.fade.style.opacity = '1';
+  startScript(bab4(S.flags.ending || 'A'));
+}
+function continueGame() {
+  const sv = readSave(); if (!sv) return;
+  S.flags = sv.flags || {}; S.notes = sv.notes || []; S.items = sv.items || []; S.finds = sv.finds || []; S.ch = sv.ch;
+  CONT = true; ({ 1: startBab1, 2: startBab2, 3: startBab3, 4: startBab4 })[Math.min(4, Math.max(1, sv.ch))]();
+}
+function renderTitlePanel() {
+  const sv = readSave();
+  showPanel('<div class="board"><h1>Selendang Hijau</h1><h2>Horor Gunung Pandan</h2><p>Tiga pendaki, satu larangan yang dilanggar. Cerita fiksi berlatar legenda Gunung Pandan, Bojonegoro. Pakai earphone dan putar HP ke mendatar.</p>' +
+    (sv ? '<button class="cta" data-do="cont">Lanjutkan (Bab ' + Math.min(4, sv.ch) + ')</button>' : '') +
+    '<button class="cta' + (sv ? ' alt' : '') + '" data-do="new">Mulai cerita baru</button>' +
+    '<button class="cta alt" data-do="mpMenu">Main berdua (online)</button><button class="cta alt" data-do="chapters">Pilih bab</button><button class="cta alt" data-do="settings">Pengaturan</button><button class="cta alt" data-do="credits">Kredit aset</button></div>');
+}
+function showMpMenu() { showPanel('<div class="board"><h1>Main berdua</h1><p>Satu pemain membuat ruangan dan membagikan kodenya. Temanmu memasukkan kode itu.</p><button class="cta" data-do="mpHost">Buat ruangan</button><button class="cta alt" data-do="mpJoin">Gabung ruangan</button><button class="cta alt" data-do="menu">Kembali</button></div>'); }
+function showChapters() { showPanel('<div class="board"><h1>Pilih bab</h1><button class="cta alt" data-do="bab2">Bab 2: Jalur yang Berbisik</button><button class="cta alt" data-do="bab3">Bab 3: Yang Keempat</button><button class="cta alt" data-do="menu">Kembali</button></div>'); }
+function showTutorial() {
+  showPanel('<div class="board"><h1>Cara bermain</h1><ul><li><b>Berjalan:</b> tahan dan geser jari di sisi <b>kiri</b> layar.</li><li><b>Memutar kamera:</b> geser jari di sisi <b>kanan</b> layar.</li><li><b>Dialog:</b> ketuk layar untuk lanjut.</li><li><b>Aksi:</b> tekan tombol emas yang muncul di dekat benda atau orang.</li><li><b>Buku catatan 📓:</b> berisi pantangan dan temuanmu.</li><li>Saat dikejar, tahan tombol 🏃 untuk berlari, tapi napasmu terbatas.</li></ul><button class="cta" data-do="tutOk">Mengerti, mulai</button></div>');
+}
+
+/* =====================  SUARA: MUSIK PROSEDURAL + SAMPEL ASLI (OPSIONAL)  ===================== */
+// Letakkan file suara di folder utama repo agar dipakai otomatis (format .mp3 atau .ogg):
+// ambient (suara hutan, berulang), musik (musik latar, berulang), langkah, bisik, jantung, sting (kejutan).
+// Kalau file tidak ada, game memakai suara buatan dan musik prosedural di bawah.
+const SMP = {};
+const SMP_FILES = ['ambient', 'musik', 'langkah', 'bisik', 'jantung', 'sting'];
+function playSmp(n, v, rate, loop) {
+  if (!AU.ctx || !AU.on || !SMP[n]) return null;
+  try { const s = AU.ctx.createBufferSource(); s.buffer = SMP[n]; s.loop = !!loop; if (rate) s.playbackRate.value = rate; const g = AU.ctx.createGain(); g.gain.value = v; s.connect(g); g.connect(AU.master); s.start(); return { s, g }; } catch (e) { return null; }
+}
+function loadSamples() {
+  if (!AU.ctx || AU.smpLoading || typeof fetch !== 'function') return; AU.smpLoading = true;
+  SMP_FILES.forEach(n => ['mp3', 'ogg'].forEach(ext => {
+    fetch(n + '.' + ext).then(r => { if (!r.ok) throw new Error('x'); return r.arrayBuffer(); }).then(b => AU.ctx.decodeAudioData(b)).then(buf => {
+      if (SMP[n]) return; SMP[n] = buf; modelState['s_' + n] = 'ok';
+      if (n === 'ambient') AU.ambS = playSmp('ambient', 0.5, 1, true);
+      if (n === 'musik') AU.musS = playSmp('musik', 0.2, 1, true);
+    }).catch(() => { });
+  }));
+}
+{
+  const w0 = sfx.whisper, s0 = sfx.stepsBehind, h0 = sfx.heart, t0 = sfx.sting;
+  sfx.whisper = () => { if (SMP.bisik) playSmp('bisik', 0.7, 0.92 + Math.random() * 0.16); else w0(); };
+  sfx.stepsBehind = (n, vol) => { if (SMP.langkah) { for (let i = 0; i < n; i++) setTimeout(() => playSmp('langkah', 0.55 * (vol || 0.5), 0.95 + Math.random() * 0.1), i * 520); } else s0(n, vol); };
+  sfx.heart = k => { if (SMP.jantung) playSmp('jantung', 0.25 + 0.5 * k); else h0(k); };
+  sfx.sting = () => { if (SMP.sting) playSmp('sting', 0.85); else t0(); };
+}
+function getRev() {
+  if (AU.rev) return AU.rev;
+  const c = AU.ctx, len = Math.floor(c.sampleRate * 2.6), ir = c.createBuffer(2, len, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+  const cv = c.createConvolver(); cv.buffer = ir; const g = c.createGain(); g.gain.value = 0.8; cv.connect(g); g.connect(AU.master); AU.rev = cv; return cv;
+}
+function toneR(f, d, type, v, f2, delay) {          // nada dengan gema (untuk musik)
+  if (!AU.ctx || !AU.on) return;
+  try {
+    const c = AU.ctx, t = c.currentTime + (delay || 0), o = c.createOscillator(), g = c.createGain();
+    o.type = type || 'sine'; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + d);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g); g.connect(getRev()); const dry = c.createGain(); dry.gain.value = 0.35; g.connect(dry); dry.connect(AU.master); o.start(t); o.stop(t + d + 0.05);
+  } catch (e) { }
+}
+function padInit() {
+  const c = AU.ctx, g = c.createGain(); g.gain.value = 0; const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 240;
+  const lf = c.createOscillator(); lf.frequency.value = 0.07; const lg = c.createGain(); lg.gain.value = 90; lf.connect(lg); lg.connect(f.frequency);
+  [55, 55.4, 82.5].forEach((fr, i) => { const o = c.createOscillator(); o.type = i === 2 ? 'triangle' : 'sawtooth'; o.frequency.value = fr; o.connect(f); o.start(); });
+  f.connect(g); g.connect(AU.master); lf.start(); AU.pad = g;
+}
+const MSCALE = [55, 58.27, 65.41, 73.42, 82.41, 87.31, 98, 110];
+function musicTick(dt) {
+  if (!AU.ctx || !AU.on) return;
+  if (AU.musS) { AU.musS.g.gain.value = 0.15 + 0.5 * fear; return; }                 // ada musik asli: cukup atur volume menurut rasa takut
+  if (!AU.pad) padInit();
+  AU.pad.gain.setTargetAtTime(state === 'play' ? 0.016 + fear * 0.03 : 0.012, AU.ctx.currentTime, 1.5);
+  AU.mT = (AU.mT === undefined ? 2 : AU.mT) - dt;
+  if (AU.mT <= 0) {
+    AU.mT = Math.max(2.2, 4.5 + Math.random() * 6 - fear * 3);
+    const f = MSCALE[Math.floor(Math.random() * MSCALE.length)] * (Math.random() < 0.25 ? 4 : 2);
+    toneR(f, 5.5, 'sine', 0.05 + fear * 0.05); toneR(f * 1.5, 4, 'triangle', 0.018, null, 0.08);
+    if (fear > 0.5 && Math.random() < 0.5) toneR(f * 1.06, 4, 'sawtooth', 0.01);
+  }
+}
+
 /* =====================  MODEL 3D (.glb / .fbx) OPSIONAL  ===================== */
 // Taruh file model di folder utama repo. Game mencoba nama di "files" berurutan; kalau tidak ada, tokoh tetap memakai balok.
 // h = tinggi tokoh (meter), rot = putar model (radian) kalau menghadap arah salah (mis. 3.1416 untuk berbalik).
@@ -1857,7 +2029,7 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v17';
+const BUILD = 'v18';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
@@ -2190,10 +2362,10 @@ function showTitle() {
   setMood('dusk');
   place(raka, START.x, START.z, Math.PI); place(dinda, START.x - 1.7, START.z + 2.0, Math.PI); place(bayu, START.x + 1.8, START.z + 2.6, Math.PI); place(mbah, MK.x, MK.z, 0); faceTo(mbah, START.x, START.z);
   cineTo(START.x + 6, 3.4, START.z + 8, 0, 12, -50, 3); snapCam();
-  showPanel('<div class="board"><h1>Selendang Hijau</h1><h2>Horor Gunung Pandan</h2><p>Tiga pendaki, satu larangan yang dilanggar. Cerita fiksi berlatar legenda Gunung Pandan, Bojonegoro. Pakai earphone dan putar HP ke mendatar.</p><button class="cta" data-do="new">Mulai Bab 1</button><button class="cta alt" data-do="bab2">Langsung ke Bab 2</button><button class="cta alt" data-do="bab3">Langsung ke Bab 3</button><button class="cta alt" data-do="mpHost">Main berdua (buat ruangan)</button><button class="cta alt" data-do="mpJoin">Main berdua (gabung ruangan)</button><button class="cta alt" data-do="credits">Kredit aset</button></div>');
+  renderTitlePanel();
 }
 function startBab1() {
-  resetInput(); hidePanel(); S.flags = {}; S.notes = []; S.items = []; S.finds = []; resetWorld(); state = 'play';
+  resetInput(); hidePanel(); S.flags = {}; S.notes = []; S.items = []; S.finds = []; S.ch = 1; CONT = false; saveGame(); resetWorld(); state = 'play';
   el.fade.style.transition = 'none'; el.fade.style.opacity = '1';
   startScript(bab1());
 }
@@ -2201,7 +2373,18 @@ el.panel.addEventListener('click', e => {
   auInit();
   const b = e.target.closest ? e.target.closest('[data-do]') : null; if (!b) return;
   const a = b.dataset.do;
-  if (a === 'new') startBab1();
+  if (a === 'new') { let seen = false; try { seen = !!localStorage.getItem('sh_tut'); } catch (e) { } if (seen) startBab1(); else showTutorial(); }
+  else if (a === 'tutOk') { try { localStorage.setItem('sh_tut', '1'); } catch (e) { } startBab1(); }
+  else if (a === 'cont') continueGame();
+  else if (a === 'mpMenu') showMpMenu();
+  else if (a === 'chapters') showChapters();
+  else if (a === 'settings') showSettings('title');
+  else if (a === 'settings2') showSettings('pause');
+  else if (a === 'sTxt') { cycleTxt(); showSettings(); }
+  else if (a === 'sSens') { cycleSens(); showSettings(); }
+  else if (a === 'sBright') { cycleBright(); showSettings(); }
+  else if (a === 'sQual') { cycleQual(); showSettings(); }
+  else if (a === 'sBack') { if (SETBACK === 'pause') { state = 'play'; pauseGame(); } else renderTitlePanel(); }
   else if (a === 'bab2') startBab2();
   else if (a === 'bab3') startBab3();
   else if (a === 'credits') showCredits();
@@ -2229,7 +2412,7 @@ function cycleQual() {
 function pauseGame() {
   if (state !== 'play') return;
   state = 'pause'; resetInput();
-  showPanel('<div class="board"><h1>Dijeda</h1><p>Hutan menunggu dengan sabar.</p><button class="cta" data-do="resume">Lanjut</button><button class="cta alt" data-do="bright">Kecerahan: ' + brightLabel() + '</button><button class="cta alt" data-do="qual">Kualitas: ' + qualLabel() + '</button><button class="cta alt" data-do="menu">Ke menu</button></div>');
+  showPanel('<div class="board"><h1>Dijeda</h1><p>Hutan menunggu dengan sabar.</p><button class="cta" data-do="resume">Lanjut</button><button class="cta alt" data-do="settings2">Pengaturan</button><button class="cta alt" data-do="menu">Ke menu</button></div>');
 }
 $('#pauseBtn').addEventListener('click', pauseGame);
 $('#muteBtn').addEventListener('click', () => { auInit(); AU.on = !AU.on; if (AU.master) AU.master.gain.value = AU.on ? 0.6 : 0; $('#muteBtn').textContent = AU.on ? '🔊' : '🔇'; });
@@ -2254,7 +2437,15 @@ function updatePlayer(dt) {
   }
   const len = Math.hypot(mx, my); if (len > 1) { mx /= len; my /= len; }
   const sy = Math.sin(camYaw), cy = Math.cos(camYaw);
-  const tvx = (-sy * my + cy * mx) * 3.4, tvz = (-cy * my - sy * mx) * 3.4;
+  let spd = 3.4;
+  if (CH.on) {
+    const wantS = (sprintOn || keys.shift) && len > 0.1 && !exhausted;
+    if (wantS && stamina > 0) { spd = 5.3; stamina = Math.max(0, stamina - dt * 0.22); if (stamina <= 0) exhausted = true; }
+    else stamina = Math.min(1, stamina + dt * (len > 0.1 ? 0.1 : 0.25));
+    if (exhausted && stamina > 0.3) exhausted = false;
+    if (stumbleT > 0) { stumbleT -= dt; spd *= 0.4; }
+  }
+  const tvx = (-sy * my + cy * mx) * spd, tvz = (-cy * my - sy * mx) * spd;
   const k = Math.min(1, dt * 9);
   vel.x += (tvx - vel.x) * k; vel.z += (tvz - vel.z) * k;
   const c = collide(ME.x + vel.x * dt, ME.z + vel.z * dt, 0.35, ME);
@@ -2295,6 +2486,7 @@ function loop(now) {
   else if (state === 'title') clock += dt;
   if (state === 'play' || state === 'end') updateB2(dt, clock);
   netTick(dt);
+  musicTick(dt);
   updateTreeLOD(dt);
   updateGrass(dt);
   updateActors(dt, clock);
@@ -2315,6 +2507,6 @@ function loop(now) {
     }
   }
 }
-if (window.__DEBUG) window.__dbg = { NET, get STEPN() { return STEPN; }, get ME() { return ME; }, get WAIT() { return WAIT; }, grass, cloudGroup, mountMat, cloudMat, vel, PH, treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
+if (window.__DEBUG) window.__dbg = { CH, NET, get STEPN() { return STEPN; }, get ME() { return ME; }, get WAIT() { return WAIT; }, grass, cloudGroup, mountMat, cloudMat, vel, PH, treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
 showTitle();
 requestAnimationFrame(t => { last = t; requestAnimationFrame(loop); });
