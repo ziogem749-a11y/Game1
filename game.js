@@ -1359,7 +1359,7 @@ function enterClearing() {
 // Taruh file model di folder utama repo. Game mencoba nama di "files" berurutan; kalau tidak ada, tokoh tetap memakai balok.
 // h = tinggi tokoh (meter), rot = putar model (radian) kalau menghadap arah salah (mis. 3.1416 untuk berbalik).
 const MODELS = {
-  raka: { files: ['raka.glb', 'raka.fbx', 'Smooth_Male_Casual.fbx', 'Male_Casual.fbx'], h: 1.75, rot: 0, pal: { skin: 0xb98a62, hair: 0x18120e, top: 0xb6e3a0, bottom: 0x2b3448 } },
+  raka: { files: ['raka.glb', 'raka.fbx', 'Smooth_Male_Shirt.fbx', 'Male_Shirt.fbx', 'Smooth_Male_Casual.fbx', 'Male_Casual.fbx'], h: 1.75, rot: 0, pal: { skin: 0xb98a62, hair: 0x18120e, top: 0xb6e3a0, bottom: 0x2b3448 } },
   dinda: { files: ['dinda.glb', 'dinda.fbx'], h: 1.62, rot: 0, pal: { skin: 0xc79a72, hair: 0x120d0a, top: 0x8a2f3a, bottom: 0x2a2a34 } },
   bayu: { files: ['bayu.glb', 'bayu.fbx', 'Smooth_Male_LongSleeve.fbx', 'Male_LongSleeve.fbx'], h: 1.78, rot: 0, pal: { skin: 0xd7a67d, hair: 0x2a2018, top: 0xd9782b, bottom: 0x3a4a3a } },
   mbah: { files: ['mbah.glb', 'mbah.fbx', 'Smooth_Male_Suit.fbx', 'Male_Suit.fbx'], h: 1.62, rot: 0, pal: { skin: 0xb98a60, hair: 0xe6e6e0, top: 0x2a2a35, bottom: 0x2a2a35 } },
@@ -1417,6 +1417,7 @@ function fixModelColors(root, cfg, fname) {
     if (fixed && meshes.length === 1 && mats.length === 1 && bandColor(o, P)) return;
     o.material = arr ? out : out[0];
   });
+  root.traverse(o => { if (!o.isMesh) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m && m.emissive && m.color && !m.userData.lit) { m.userData.lit = true; m.emissive.copy(m.color).multiplyScalar(0.16); } }); });
   if (fixed && !colorToastShown) { colorToastShown = true; toast('Warna model tidak terbaca, dipakai warna cadangan (' + fname + '; bahan: ' + names.slice(0, 6).join(', ') + ')', 9000); }
 }
 function attachModel(target, cfg) {
