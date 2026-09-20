@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 
 /* =====================================================================
    SELENDANG HIJAU  -  Bab 1: Kaki Gunung
@@ -1354,19 +1355,25 @@ function enterClearing() {
 }
 
 
-/* =====================  MODEL 3D (.glb) OPSIONAL  ===================== */
-// Taruh file .glb di folder utama repo dengan nama di bawah. Kalau file tidak ada, tokoh tetap memakai model balok.
-// h = tinggi tokoh (meter), rot = putar model (radian) kalau modelnya menghadap ke arah yang salah (mis. 3.1416).
+/* =====================  MODEL 3D (.glb / .fbx) OPSIONAL  ===================== */
+// Taruh file model di folder utama repo. Game mencoba nama di "files" berurutan; kalau tidak ada, tokoh tetap memakai balok.
+// h = tinggi tokoh (meter), rot = putar model (radian) kalau menghadap arah salah (mis. 3.1416 untuk berbalik).
 const MODELS = {
-  raka: { file: 'raka.glb', h: 1.75, rot: 0 },
-  dinda: { file: 'dinda.glb', h: 1.62, rot: 0 },
-  bayu: { file: 'bayu.glb', h: 1.78, rot: 0 },
-  mbah: { file: 'mbah.glb', h: 1.62, rot: 0 },
-  laras: { file: 'laras.glb', h: 1.9, rot: 0 }
+  raka: { files: ['raka.glb', 'raka.fbx', 'Smooth_Male_Casual.fbx', 'Male_Casual.fbx'], h: 1.75, rot: 0 },
+  dinda: { files: ['dinda.glb', 'dinda.fbx'], h: 1.62, rot: 0 },
+  bayu: { files: ['bayu.glb', 'bayu.fbx', 'Smooth_Male_LongSleeve.fbx', 'Male_LongSleeve.fbx'], h: 1.78, rot: 0 },
+  mbah: { files: ['mbah.glb', 'mbah.fbx', 'Smooth_Male_Suit.fbx', 'Male_Suit.fbx'], h: 1.62, rot: 0 },
+  laras: { files: ['laras.glb', 'laras.fbx'], h: 1.9, rot: 0 }
 };
-const gltfLoader = new GLTFLoader();
+const gltfLoader = new GLTFLoader(), fbxLoader = new FBXLoader();
+let animToastShown = false;
+function loadModelFile(files, i, ok, fail) {
+  if (i >= files.length) { fail(); return; }
+  const f = files[i], isFbx = /\.fbx$/i.test(f);
+  (isFbx ? fbxLoader : gltfLoader).load(f, obj => ok(isFbx ? { scene: obj, animations: obj.animations || [] } : obj, f), undefined, () => loadModelFile(files, i + 1, ok, fail));
+}
 function attachModel(target, cfg) {
-  gltfLoader.load(cfg.file, gltf => {
+  loadModelFile(cfg.files, 0, (gltf, fname) => {
     try {
       const root = gltf.scene, g = target.g;
       root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
@@ -1377,17 +1384,19 @@ function attachModel(target, cfg) {
       g.children.slice().forEach(c => { c.visible = false; });
       g.add(holder);
       if (gltf.animations && gltf.animations.length) {
-        const mixer = new THREE.AnimationMixer(root), acts = {};
+        const mixer = new THREE.AnimationMixer(root), acts = {}, names = [];
         gltf.animations.forEach(cl => {
-          const n = String(cl.name || '').toLowerCase();
-          if (/idle|stand|breath|wait/.test(n)) { if (!acts.idle) acts.idle = mixer.clipAction(cl); }
-          else if (/walk|run|jog/.test(n)) { if (!acts.walk) acts.walk = mixer.clipAction(cl); }
+          const n = String(cl.name || '').toLowerCase(); names.push(cl.name);
+          if (/idle|stand|breath|wait|rest/.test(n)) { if (!acts.idle) acts.idle = mixer.clipAction(cl); }
+          else if (/walk/.test(n)) { if (!acts.walk) acts.walk = mixer.clipAction(cl); }
         });
+        if (!acts.walk) gltf.animations.forEach(cl => { if (!acts.walk && /run|jog/.test(String(cl.name || '').toLowerCase())) acts.walk = mixer.clipAction(cl); });
         if (!acts.idle) acts.idle = mixer.clipAction(gltf.animations[0]);
+        if (!acts.walk && !animToastShown) { animToastShown = true; toast(fname + ': animasi = ' + names.join(', '), 9000); }
         acts.idle.play(); target.mixer = mixer; target.acts = acts; target.cur = 'idle';
       }
-    } catch (e) { console.warn('Model gagal dipasang (' + cfg.file + '):', e); }
-  }, undefined, () => { /* file tidak ada: tetap pakai balok */ });
+    } catch (e) { console.warn('Model gagal dipasang (' + fname + '):', e); }
+  }, () => { /* tidak ada file model: tetap pakai balok */ });
 }
 [['raka', raka], ['dinda', dinda], ['bayu', bayu], ['mbah', mbah]].forEach(p => attachModel(p[1], MODELS[p[0]]));
 attachModel(fig, MODELS.laras);
