@@ -1359,11 +1359,11 @@ function enterClearing() {
 // Taruh file model di folder utama repo. Game mencoba nama di "files" berurutan; kalau tidak ada, tokoh tetap memakai balok.
 // h = tinggi tokoh (meter), rot = putar model (radian) kalau menghadap arah salah (mis. 3.1416 untuk berbalik).
 const MODELS = {
-  raka: { files: ['raka.glb', 'raka.fbx', 'Smooth_Male_Casual.fbx', 'Male_Casual.fbx'], h: 1.75, rot: 0 },
-  dinda: { files: ['dinda.glb', 'dinda.fbx'], h: 1.62, rot: 0 },
-  bayu: { files: ['bayu.glb', 'bayu.fbx', 'Smooth_Male_LongSleeve.fbx', 'Male_LongSleeve.fbx'], h: 1.78, rot: 0 },
-  mbah: { files: ['mbah.glb', 'mbah.fbx', 'Smooth_Male_Suit.fbx', 'Male_Suit.fbx'], h: 1.62, rot: 0 },
-  laras: { files: ['laras.glb', 'laras.fbx'], h: 1.9, rot: 0 }
+  raka: { files: ['raka.glb', 'raka.fbx', 'Smooth_Male_Casual.fbx', 'Male_Casual.fbx'], h: 1.75, rot: 0, pal: { skin: 0xb98a62, hair: 0x18120e, top: 0xb6e3a0, bottom: 0x2b3448 } },
+  dinda: { files: ['dinda.glb', 'dinda.fbx'], h: 1.62, rot: 0, pal: { skin: 0xc79a72, hair: 0x120d0a, top: 0x8a2f3a, bottom: 0x2a2a34 } },
+  bayu: { files: ['bayu.glb', 'bayu.fbx', 'Smooth_Male_LongSleeve.fbx', 'Male_LongSleeve.fbx'], h: 1.78, rot: 0, pal: { skin: 0xd7a67d, hair: 0x2a2018, top: 0xd9782b, bottom: 0x3a4a3a } },
+  mbah: { files: ['mbah.glb', 'mbah.fbx', 'Smooth_Male_Suit.fbx', 'Male_Suit.fbx'], h: 1.62, rot: 0, pal: { skin: 0xb98a60, hair: 0xe6e6e0, top: 0x2a2a35, bottom: 0x2a2a35 } },
+  laras: { files: ['laras.glb', 'laras.fbx'], h: 1.9, rot: 0, pal: { skin: 0xb8c4bd, hair: 0x07090a, top: 0xbfeec4, bottom: 0x101418 } }
 };
 const gltfLoader = new GLTFLoader(), fbxLoader = new FBXLoader();
 let animToastShown = false;
@@ -1371,6 +1371,53 @@ function loadModelFile(files, i, ok, fail) {
   if (i >= files.length) { fail(); return; }
   const f = files[i], isFbx = /\.fbx$/i.test(f);
   (isFbx ? fbxLoader : gltfLoader).load(f, obj => ok(isFbx ? { scene: obj, animations: obj.animations || [] } : obj, f), undefined, () => loadModelFile(files, i + 1, ok, fail));
+}
+let colorToastShown = false;
+function bandColor(mesh, P) {
+  const g = mesh.geometry, pos = g && g.attributes && g.attributes.position; if (!pos || !pos.count) return false;
+  g.computeBoundingBox(); const b = g.boundingBox;
+  const mn = [b.min.x, b.min.y, b.min.z], mx = [b.max.x, b.max.y, b.max.z], ext = [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]];
+  const up = ext[1] >= ext[0] && ext[1] >= ext[2] ? 1 : (ext[2] >= ext[0] ? 2 : 0);
+  const side = up === 0 ? (ext[1] >= ext[2] ? 1 : 2) : (up === 1 ? (ext[0] >= ext[2] ? 0 : 2) : (ext[0] >= ext[1] ? 0 : 1));
+  const val = (i, ax) => ax === 0 ? pos.getX(i) : (ax === 1 ? pos.getY(i) : pos.getZ(i));
+  const h = ext[up] || 1, cs = (mn[side] + mx[side]) / 2, hw = (ext[side] / 2) || 1;
+  const cols = new Float32Array(pos.count * 3), c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const t = (val(i, up) - mn[up]) / h, ax = Math.abs(val(i, side) - cs) / hw; let hex;
+    if (t < 0.05) hex = P.shoe; else if (t < 0.5) hex = P.bottom; else if (t >= 0.83) hex = t > 0.955 ? P.hair : P.skin; else hex = (ax > 0.8 && t < 0.58) ? P.skin : P.top;
+    c.setHex(hex); cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+  mesh.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
+  return true;
+}
+function fixModelColors(root, cfg, fname) {
+  const pal = cfg.pal || {}, P = { skin: pal.skin || 0xc79a72, hair: pal.hair || 0x18120e, top: pal.top || 0x3a6a8a, bottom: pal.bottom || 0x2a2f3a, shoe: 0x1c1a18 };
+  const meshes = []; root.traverse(o => { if (o.isMesh) meshes.push(o); });
+  let fixed = 0; const names = [];
+  meshes.forEach(o => {
+    const hasVC = !!(o.geometry && o.geometry.attributes && o.geometry.attributes.color);
+    const arr = Array.isArray(o.material), mats = arr ? o.material : [o.material];
+    const out = mats.map((m, i) => {
+      if (!m) return m;
+      const mapBad = !!m.map && !(m.map.image && (m.map.image.width > 0 || m.map.image.videoWidth > 0));
+      const white = !m.color || (m.color.r > 0.9 && m.color.g > 0.9 && m.color.b > 0.9);
+      names.push(m.name || ('bahan' + i));
+      if (hasVC || (m.map && !mapBad) || (!mapBad && !white)) return m;
+      const n = String(m.name || '').toLowerCase(); let c;
+      if (/skin|face|head|hand|body|flesh/.test(n)) c = P.skin;
+      else if (/hair|beard|brow|mustache/.test(n)) c = P.hair;
+      else if (/shoe|boot|foot|feet|sole/.test(n)) c = P.shoe;
+      else if (/pant|trouser|jean|short|leg|bottom/.test(n)) c = P.bottom;
+      else if (/shirt|top|cloth|jacket|sweater|suit|coat|torso|sleeve/.test(n)) c = P.top;
+      else c = [P.skin, P.top, P.bottom, P.hair, P.shoe][(i + fixed) % 5];
+      fixed++;
+      return new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, metalness: 0 });
+    });
+    if (fixed && meshes.length === 1 && mats.length === 1 && bandColor(o, P)) return;
+    o.material = arr ? out : out[0];
+  });
+  if (fixed && !colorToastShown) { colorToastShown = true; toast('Warna model tidak terbaca, dipakai warna cadangan (' + fname + '; bahan: ' + names.slice(0, 6).join(', ') + ')', 9000); }
 }
 function attachModel(target, cfg) {
   loadModelFile(cfg.files, 0, (gltf, fname) => {
@@ -1383,6 +1430,7 @@ function attachModel(target, cfg) {
       const holder = new THREE.Group(); holder.rotation.y = cfg.rot || 0; holder.add(root);
       g.children.slice().forEach(c => { c.visible = false; });
       g.add(holder);
+      setTimeout(() => { try { fixModelColors(root, cfg, fname); } catch (e) { console.warn('warna model:', e); } }, 1500);
       if (gltf.animations && gltf.animations.length) {
         const mixer = new THREE.AnimationMixer(root), acts = {}, names = [];
         gltf.animations.forEach(cl => {
