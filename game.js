@@ -1393,12 +1393,12 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v8';
+const BUILD = 'v9';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
 const modelState = {};
-function updVer() { verEl.textContent = BUILD + ' | ' + Object.keys(MODELS).map(k => k + ':' + (modelState[k] || '-')).join(' '); }
+function updVer() { verEl.textContent = BUILD + ' | ' + Object.keys(MODELS).concat(['pohon']).map(k => k + ':' + (modelState[k] || '-')).join(' '); }
 let rakaTopHex = 0xb6e3a0;
 function geoAxes(g) {
   g.computeBoundingBox(); const b = g.boundingBox;
@@ -1537,6 +1537,48 @@ function attachModel(target, cfg, key) {
 attachModel(fig, MODELS.laras, 'laras');
 updVer();
 
+/* =====================  POHON DETAIL (pohon.glb)  ===================== */
+// pohon.glb berisi 3 jenis pohon (Tree_A, Tree_B, Tree_C). Dipasang beberapa saja di dekat jalur; pohon jauh disembunyikan agar HP tidak berat.
+const heroTrees = [];
+function heroSpots() {
+  let sd = 4242; const r = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  const spots = [];
+  const far = (x, z) => !spots.some(p => Math.hypot(p[0] - x, p[1] - z) < 7.5);
+  for (let n = 0; n < 400 && spots.length < 9; n++) {           // Bab 1: sekitar pondok dan gapura
+    const z = -24 + r() * 42, sd2 = r() < 0.5 ? -1 : 1, x = trailX(z) + sd2 * (9 + r() * 6);
+    if (Math.abs(x) > 31 || Math.hypot(x - HUT.x, z - HUT.z) < 8 || Math.hypot(x - GATE.x, z - GATE.z) < 7 || !far(x, z)) continue;
+    spots.push([x, z]);
+  }
+  const sidePoly = [[SIDE0.x, SIDE0.z]].concat(SIDE);
+  for (let n = 0; n < 800 && spots.length < 9 + 12; n++) {       // Bab 2: sepanjang jalur mendaki
+    const z = -34 - r() * 100, sd2 = r() < 0.5 ? -1 : 1, x = trailX(z) + sd2 * (6.8 + r() * 5);
+    const q = nearOnPoly(sidePoly, x, z);
+    if (Math.hypot(x - POS1.x, z - POS1.z) < 7 || Math.hypot(x - q[0], z - q[1]) < 6 || Math.hypot(x - MTREE.x, z - MTREE.z) < 4 || Math.hypot(x - SCARF.x, z - SCARF.z) < 4 || !far(x, z)) continue;
+    spots.push([x, z]);
+  }
+  return { spots, r };
+}
+gltfLoader.load('pohon.glb', gltf => {
+  try {
+    const variants = []; gltf.scene.children.forEach(ch => { if (/^Tree_/.test(ch.name)) variants.push(ch); });
+    if (!variants.length) return;
+    const hs = heroSpots(), r = hs.r;
+    hs.spots.forEach((p, i) => {
+      const t = variants[i % variants.length].clone(true), k = 0.85 + r() * 0.5;
+      t.position.set(p[0], terrainH(p[0], p[1]) - 0.15, p[1]); t.rotation.y = r() * 6.28; t.scale.setScalar(k);
+      t.traverse(o => { if (o.isMesh) { o.castShadow = !!(o.material && /bark/i.test(o.material.name || '')); o.receiveShadow = false; } });
+      scene.add(t); heroTrees.push(t); circles.push({ x: p[0], z: p[1], r: 0.6 * k });
+    });
+    modelState.pohon = heroTrees.length + 'x'; updVer();
+  } catch (e) { console.warn('pohon.glb gagal dipasang:', e); }
+}, undefined, () => { modelState.pohon = 'x'; updVer(); });
+let heroT = 0;
+function updateHero(dt) {
+  heroT -= dt; if (heroT > 0 || !heroTrees.length) return; heroT = 0.4;
+  for (const t of heroTrees) t.visible = QUAL !== 'low' && Math.hypot(t.position.x - raka.x, t.position.z - raka.z) < 60;
+}
+
+
 /* =====================  ALUR APLIKASI  ===================== */
 let state = 'title';
 function showTitle() {
@@ -1642,6 +1684,7 @@ function loop(now) {
   if (state === 'play' && !(portrait && !ignoreRot)) update(dt);
   else if (state === 'title') clock += dt;
   if (state === 'play' || state === 'end') updateB2(dt, clock);
+  updateHero(dt);
   updateActors(dt, clock);
   updateCamera(dt);
   // matahari/bulan dan bayangan mengikuti pemain
