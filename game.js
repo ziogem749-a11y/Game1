@@ -405,7 +405,35 @@ function place(a, x, z, face) { a.x = x; a.z = z; if (face !== undefined) a.face
 function faceTo(a, x, z) { a.face = Math.atan2(x - a.x, z - a.z); }
 // ---- pendamping (Dinda & Bayu): arah gerak pemain dihaluskan, dipakai untuk menaruh mereka di samping/depan ----
 const PH = { hx: 0, hz: -1, sp: 0, idleT: 0 };
-const SLOTS = { Dinda: { side: -1.5, back: 0.7 }, Bayu: { side: 1.8, back: -1.4 } };
+// Sifat tiap pendamping: 'far' = jarak dari pemain sebelum mulai menyusul, 'near' = jarak berhenti,
+// 'spd' = kecepatan relatif terhadap pemain, 'react' = jeda sebelum mulai berjalan, 'roam' = radius berkeliaran saat pemain diam.
+const PERS = { Dinda: { far: 4.8, near: 2.9, spd: 0.9, react: 0.8, roam: 3.0 }, Bayu: { far: 4.2, near: 2.3, spd: 0.97, react: 0.4, roam: 4.0 } };
+function followLoose(a, dt, t) {
+  const P = PERS[a.name] || { far: 4.5, near: 2.5, spd: 0.92, react: 0.7, roam: 3 };
+  if (a.fs === undefined) { a.fs = 'idle'; a.rt = 0.5; a.wT = 1 + Math.random() * 2; a.lookT = 1; a.fj = 1; a.so = 1.5; a.bo = 1.5; }
+  const dx = raka.x - a.x, dz = raka.z - a.z, dp = Math.hypot(dx, dz);
+  if (a.fs === 'idle') {
+    if (dp > P.far * a.fj) {
+      a.rt -= dt * (dp > 7 ? 5 : 1);                // jeda dulu sebelum menyusul, seperti orang sungguhan (kalau sudah sangat jauh, langsung menyusul)
+      if (a.rt <= 0) { a.fs = 'walk'; a.so = (Math.random() < 0.5 ? -1 : 1) * (0.8 + Math.random() * 2.0); a.bo = -0.5 + Math.random() * 3.2; a.tx = null; }
+    } else {
+      a.rt = P.react * (0.6 + Math.random() * 0.8);
+      a.wT -= dt;                                   // dekat pemain: berdiri, kadang bergeser pelan
+      if (a.tx === null && a.wT <= 0) {
+        const ang = Math.random() * 6.283, r = 1.5 + Math.random() * (P.roam - 1.5);
+        a.tx = raka.x + Math.cos(ang) * r; a.tz = raka.z + Math.sin(ang) * r; a.spd = 0.9; a.wT = 4 + Math.random() * 6;
+      }
+    }
+    a.lookT -= dt;                                  // sesekali menoleh ke sekitar atau ke pemain
+    if (a.lookT <= 0) { a.lookYaw = Math.random() < 0.5 ? Math.atan2(dx, dz) : a.face + (Math.random() - 0.5) * 3.0; a.lookT = 2 + Math.random() * 4; }
+  } else {
+    a.lookYaw = undefined;
+    const fx = PH.hx, fz = PH.hz;
+    a.tx = raka.x + (-fz) * a.so - fx * a.bo; a.tz = raka.z + fx * a.so - fz * a.bo;   // menuju sekitar pemain, bukan tepat di belakangnya
+    a.spd = clamp(PH.sp * P.spd + Math.max(0, dp - P.near) * 0.6, 1.0, 5.2);
+    if (dp < P.near || Math.hypot(a.tx - a.x, a.tz - a.z) < 0.5) { a.fs = 'idle'; a.tx = null; a.wT = 1.5 + Math.random() * 3; a.fj = 0.8 + Math.random() * 0.5; a.rt = P.react; }
+  }
+}
 function updateHeading(dt) {
   const sp = Math.hypot(vel.x, vel.z); PH.sp = sp;
   if (sp > 0.8) {
@@ -419,24 +447,7 @@ function updateActors(dt, t) {
     if (!a.g.visible) continue;
     if (a !== raka) {
       a.moving = false;
-      if (a.follow) {
-        if (PH.idleT > 1.4) {
-          // pemain berhenti: pendamping berdiri santai, sesekali bergeser dan menoleh
-          a.wT = (a.wT === undefined ? 1.5 : a.wT) - dt;
-          if (a.tx === null && a.wT <= 0) {
-            const ang = Math.random() * 6.283, rr2 = 1.4 + Math.random() * 1.4;
-            a.tx = raka.x + Math.cos(ang) * rr2; a.tz = raka.z + Math.sin(ang) * rr2; a.spd = 1.0; a.wT = 3.5 + Math.random() * 5;
-          }
-        } else {
-          // pemain berjalan: berjalan berdampingan (satu di kiri-belakang, satu di kanan-depan), posisinya bergeser pelan
-          const sl = SLOTS[a.name] || { side: a.off[0], back: a.off[1] };
-          const fx = PH.hx, fz = PH.hz;
-          const side = sl.side * (1 + 0.22 * Math.sin(t * 0.45 + a.seed)), back = sl.back + 0.7 * Math.cos(t * 0.31 + a.seed * 1.7);
-          const tx = raka.x + (-fz) * side - fx * back, tz = raka.z + fx * side - fz * back;
-          const d = Math.hypot(tx - a.x, tz - a.z);
-          if (d > 0.5) { a.tx = tx; a.tz = tz; a.spd = clamp(PH.sp * (0.8 + d * 0.3) + 0.4, 1.2, 4.8); }
-        }
-      }
+      if (a.follow) followLoose(a, dt, t);
       if (a.tx !== null) {
         const dx = a.tx - a.x, dz = a.tz - a.z, d = Math.hypot(dx, dz);
         if (d < 0.1) a.tx = null;
@@ -446,9 +457,11 @@ function updateActors(dt, t) {
           a.x = c[0]; a.z = c[1];
           a.face += angDiff(Math.atan2(dx, dz) - a.face) * Math.min(1, dt * 8); a.moving = true;
         }
-      } else if (a.watch || (a.follow && PH.idleT > 1.4)) {
+      } else if (a.watch) {
         const want = Math.atan2(raka.x - a.x, raka.z - a.z);
         a.face += angDiff(want - a.face) * Math.min(1, dt * 3);
+      } else if (a.follow && a.lookYaw !== undefined) {
+        a.face += angDiff(a.lookYaw - a.face) * Math.min(1, dt * 1.3);   // menoleh santai saat berdiri
       }
     }
     a.y = lerp(a.y, groundY(a.x, a.z), Math.min(1, dt * 12));
@@ -461,7 +474,7 @@ function updateActors(dt, t) {
     P.arms[0].rotation.x = -Math.sin(a.ph) * 0.6 * sw; P.arms[1].rotation.x = Math.sin(a.ph) * 0.6 * sw;
     P.body.position.y = Math.abs(Math.sin(a.ph)) * 0.04 * sw + Math.sin(t * 1.6 + a.seed) * 0.006;
     if (a !== raka) {
-      const rel = (a.watch || (a.follow && PH.idleT > 1.4)) ? clamp(angDiff(Math.atan2(raka.x - a.x, raka.z - a.z) - a.face), -0.9, 0.9) : 0;
+      const rel = a.watch ? clamp(angDiff(Math.atan2(raka.x - a.x, raka.z - a.z) - a.face), -0.9, 0.9) : 0;
       a.headYaw = lerp(a.headYaw, rel, Math.min(1, dt * 4)); P.head.rotation.y = a.headYaw;
     }
     if (a.mixer) {
@@ -1421,7 +1434,7 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v13';
+const BUILD = 'v14';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
