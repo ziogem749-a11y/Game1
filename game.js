@@ -403,7 +403,7 @@ const dinda = mkActor('Dinda', person({ top: 0x8a2f3a, bottom: 0x2a2a34, hair: 0
 const bayu = mkActor('Bayu', person({ top: 0xd9782b, bottom: 0x3a4a3a, hair: 0x1a1410, hairStyle: 'cap', capColor: 0x224466, backpack: 0x2b2b2b, scale: 1.04 }));
 const mbah = mkActor('Mbah Karto', person({ top: 0x2a2a35, skirt: 0x6b4a2a, skin: 0xb98a60, hair: 0xe6e6e0, hairStyle: 'short', headband: true, stick: true, lantern: true, stoop: true, scale: 0.97 }));
 
-function place(a, x, z, face) { a.x = x; a.z = z; if (face !== undefined) a.face = face; a.tx = null; a.follow = false; a.g.visible = true; a.y = groundY(x, z); }
+function place(a, x, z, face) { a.x = x; a.z = z; if (face !== undefined) a.face = face; a.tx = null; a.follow = false; a.g.visible = true; a.y = groundY(x, z); a.net = null; }
 function faceTo(a, x, z) { a.face = Math.atan2(x - a.x, z - a.z); }
 // ---- pendamping (Dinda & Bayu): arah gerak pemain dihaluskan, dipakai untuk menaruh mereka di samping/depan ----
 const PH = { hx: 0, hz: -1, sp: 0, idleT: 0 };
@@ -446,8 +446,10 @@ function updateHeading(dt) {
 function updateActors(dt, t) {
   updateHeading(dt);
   for (const a of ACT) {
+    if (a.remote && a.net) { const kk = Math.min(1, dt * 12); a.x += (a.net.x - a.x) * kk; a.z += (a.net.z - a.z) * kk; a.face += angDiff(a.net.f - a.face) * kk; a.moving = !!a.net.m; a.spd = a.net.s || 1.7; }   // posisi pemain jarak jauh tetap diperbarui walau sedang disembunyikan
     if (!a.g.visible) continue;
-    if (a !== raka) {
+    if (a === ME || a.remote) { /* pemain lokal: dari updatePlayer; pemain jarak jauh: dari jaringan */ }
+    else {
       a.moving = false;
       if (a.follow) followLoose(a, dt, t);
       if (a.tx !== null) {
@@ -475,14 +477,14 @@ function updateActors(dt, t) {
     P.legs[0].rotation.x = Math.sin(a.ph) * 0.7 * sw; P.legs[1].rotation.x = -Math.sin(a.ph) * 0.7 * sw;
     P.arms[0].rotation.x = -Math.sin(a.ph) * 0.6 * sw; P.arms[1].rotation.x = Math.sin(a.ph) * 0.6 * sw;
     P.body.position.y = Math.abs(Math.sin(a.ph)) * 0.04 * sw + Math.sin(t * 1.6 + a.seed) * 0.006;
-    if (a !== raka) {
+    if (a !== ME) {
       const rel = a.watch ? clamp(angDiff(Math.atan2(raka.x - a.x, raka.z - a.z) - a.face), -0.9, 0.9) : 0;
       a.headYaw = lerp(a.headYaw, rel, Math.min(1, dt * 4)); P.head.rotation.y = a.headYaw;
     }
     if (a.mixer) {
       const want = (a.moving && a.acts.walk) ? 'walk' : 'idle';
       if (want !== a.cur && a.acts[want]) { const from = a.acts[a.cur], to = a.acts[want]; to.reset().play(); if (from) from.crossFadeTo(to, 0.25, false); a.cur = want; }
-      if (a.acts.walk && a.cur === 'walk') a.acts.walk.timeScale = clamp((a === raka ? Math.hypot(vel.x, vel.z) : a.spd) / 1.7, 0.6, 2.3);
+      if (a.acts.walk && a.cur === 'walk') a.acts.walk.timeScale = clamp((a === ME ? Math.hypot(vel.x, vel.z) : a.spd) / 1.7, 0.6, 2.3);
       a.mixer.update(dt);
     }
   }
@@ -505,8 +507,8 @@ function updateCamera(dt) {
   if (cineOn) { dp = cineOn.p; dl = cineOn.l; rate = cineOn.rate; }
   else {
     const cp = Math.cos(camPitch), sp = Math.sin(camPitch);
-    dp = [raka.x + Math.sin(camYaw) * cp * camDist, raka.y + 1.5 + sp * camDist, raka.z + Math.cos(camYaw) * cp * camDist];
-    dl = [raka.x, raka.y + 1.35, raka.z];
+    dp = [ME.x + Math.sin(camYaw) * cp * camDist, ME.y + 1.5 + sp * camDist, ME.z + Math.cos(camYaw) * cp * camDist];
+    dl = [ME.x, ME.y + 1.35, ME.z];
   }
   const k = 1 - Math.exp(-dt * rate);
   for (let i = 0; i < 3; i++) { CAMS.p[i] += (dp[i] - CAMS.p[i]) * k; CAMS.l[i] += (dl[i] - CAMS.l[i]) * k; }
@@ -602,6 +604,7 @@ function dlgUpdate(dt) {
 function dlgTap() {
   if (!DLG.on) return false;
   if (!DLG.finished) { DLG.acc = 1e6; DLG.shown = DLG.text.length; el.txt.textContent = DLG.text; DLG.finished = true; el.dlg.classList.add('done'); return true; }
+  if (NET.role === 'guest') { netSend({ t: 'k' }); return true; }
   DLG.tapped = true; return true;
 }
 
@@ -645,15 +648,25 @@ el.act.addEventListener('pointerdown', e => { e.preventDefault(); doAction(); })
 
 /* =====================  RUNTIME SKENARIO  ===================== */
 let SCRIPT = null, WAIT = null, LASTCHOICE = 0;
-function startScript(g) { SCRIPT = g; WAIT = null; }
+function startScript(g) { SCRIPT = g; WAIT = null; STEPN = 0; }
 function stepScript(dt) {
+  const guest = NET.role === 'guest';
   for (let guard = 0; guard < 60; guard++) {
-    if (WAIT) { if (!WAIT.test(dt)) return; if (WAIT.done) WAIT.done(); WAIT = null; }
+    if (WAIT) {
+      let ok;
+      if (guest) { if (WAIT.test) WAIT.test(dt); ok = !!WAIT.instant || NET.done[STEPN] !== undefined; }   // tamu: selesai hanya bila host bilang selesai
+      else ok = WAIT.test(dt);
+      if (!ok) return;
+      if (guest && !WAIT.instant) { const d = NET.done[STEPN]; if (d) { LASTCHOICE = d.lc; if (d.S) syncS(d.S); } }
+      if (WAIT.done) WAIT.done();
+      const inst = !!WAIT.instant; WAIT = null;
+      if (NET.role === 'host' && NET.began && !inst) netSend({ t: 'd', n: STEPN, lc: LASTCHOICE, S: packS() });
+    }
     if (!SCRIPT) return;
     let r;
     try { r = SCRIPT.next(); } catch (e) { showErr('skenario: ' + e.message); SCRIPT = null; return; }
     if (r.done) { SCRIPT = null; return; }
-    WAIT = r.value || null; if (WAIT && WAIT.init) WAIT.init();
+    WAIT = r.value || null; if (WAIT) { STEPN++; if (WAIT.init) WAIT.init(); }
   }
 }
 const T = sec => { let t = 0; return { test: dt => ((t += dt) >= sec) }; };
@@ -661,7 +674,7 @@ const UNTIL = fn => ({ test: () => !!fn() });
 const SAY = (who, text) => ({ init() { dlgShow(who, text); }, test: () => DLG.tapped, done() { dlgHide(); } });
 const CARD = (t, s, sec) => { let k = 0; return { init() { el.ct.textContent = t; el.cs.textContent = s || ''; el.card.classList.add('on'); }, test: dt => ((k += dt) >= (sec || 3)), done() { el.card.classList.remove('on'); } }; };
 const FADE = (black, sec) => { let k = 0; return { init() { el.fade.style.transition = 'opacity ' + (sec || 1) + 's'; el.fade.style.opacity = black ? '1' : '0'; }, test: dt => ((k += dt) >= (sec || 1)) }; };
-const DO = fn => ({ init() { fn(); }, test: () => true });
+const DO = fn => ({ init() { fn(); }, test: () => true, instant: true });
 function MOOD(name, sec) {
   let k = 0;
   return { init() { moodA = (moodT >= 0.5 ? moodB : moodA); moodB = name; moodT = 0; }, test: dt => { k += dt; moodT = clamp(k / sec, 0, 1); applyMood(); return k >= sec; }, done() { moodA = moodB = name; moodT = 0; applyMood(); } };
@@ -671,7 +684,7 @@ function CHOICE(opts, secs) {
   return {
     init() {
       el.choices.innerHTML = ''; LASTCHOICE = -1;
-      opts.forEach((t, i) => { const b = document.createElement('button'); b.textContent = t; b.addEventListener('pointerdown', ev => { ev.preventDefault(); LASTCHOICE = i; }); el.choices.appendChild(b); });
+      opts.forEach((t, i) => { const b = document.createElement('button'); b.textContent = t; b.addEventListener('pointerdown', ev => { ev.preventDefault(); if (NET.role === 'guest') netSend({ t: 'c', i }); else LASTCHOICE = i; }); el.choices.appendChild(b); });
       el.choices.classList.add('on');
     },
     test: dt => { if (LASTCHOICE >= 0) return true; if (secs) { k += dt; if (k >= secs) return true; } return false; },
@@ -683,7 +696,12 @@ const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 7, 14, 1, true)
 beam.visible = false; scene.add(beam);
 function GOTO(x, z, r, quiet) { const g = { x, z, r, label: null, done: false, quiet: !!quiet }; return { init() { goal = g; }, test: () => g.done, done() { goal = null; el.act.classList.remove('on'); } }; }
 function ACTION(label, x, z, r) { const g = { x, z, r, label, done: false }; return { init() { goal = g; }, test: () => g.done, done() { goal = null; el.act.classList.remove('on'); } }; }
-function doAction() { if (goal && goal.label && el.act.classList.contains('on') && state === 'play') { goal.done = true; sfx.note(); } }
+function doAction() {
+  if (goal && goal.label && el.act.classList.contains('on') && state === 'play') {
+    if (NET.role === 'guest') { netSend({ t: 'a' }); sfx.note(); return; }
+    goal.done = true; sfx.note();
+  }
+}
 
 /* =====================  CERITA: BAB 1  ===================== */
 const MK = { x: 6.2, z: -6.4 };
@@ -1089,13 +1107,13 @@ function updateB2(dt, t) {
     flash.intensity = flashBase * Math.max(0, k) * (1 - darkK);
     const dx = -Math.sin(camYaw), dy = -0.11, dz = -Math.cos(camYaw), l = Math.hypot(dx, dy, dz) || 1;
     const sy = Math.sin(camYaw), cy = Math.cos(camYaw);
-    const ox = raka.x + cy * 0.32, oy = raka.y + 1.25, oz = raka.z - sy * 0.32;
+    const ox = ME.x + cy * 0.32, oy = ME.y + 1.25, oz = ME.z - sy * 0.32;
     flash.position.set(ox, oy, oz); flash.target.position.set(ox + dx / l * 12, oy + dy / l * 12, oz + dz / l * 12);
   } else flash.intensity = 0;
   // sosok berselendang
   if (figOn) {
     fig.scarf.rotation.y = Math.sin(t * 1.7) * 0.35; fig.scarf.rotation.x = Math.sin(t * 1.1) * 0.12;
-    const want = Math.atan2(raka.x - fig.g.position.x, raka.z - fig.g.position.z);
+    const want = Math.atan2(ME.x - fig.g.position.x, ME.z - fig.g.position.z);
     fig.g.rotation.y += angDiff(want - fig.g.rotation.y) * Math.min(1, dt * 2);
     spirit.position.set(fig.g.position.x, fig.g.position.y + 1.6, fig.g.position.z); spirit.intensity = 14 + Math.sin(t * 9) * 2;
   } else if (wispS.on) {
@@ -1148,7 +1166,7 @@ function LOOKGUARD(secs, onBreak) {
   };
 }
 function figBehind() {
-  const z = raka.z + 5.5, x = trailX(z); showFig(x, z); sfx.sting(); addFear(0.32); flicker(1.4); G_shake(0.6);
+  const z = ME.z + 5.5, x = trailX(z); showFig(x, z); sfx.sting(); addFear(0.32); flicker(1.4); G_shake(0.6);
   later(1.7, () => { hideFig(); flicker(0.6); });
 }
 let shakeT = 0; function G_shake(v) { shakeT = Math.max(shakeT, v); }
@@ -1411,7 +1429,7 @@ function* walkAlone(text) { yield DO(() => { followCam(); ctrl = 'walk'; setObj(
 function* stopAlone() { yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); }); }
 function lightCandle(i) { clFlames[i].k = 1; sfx.chime(); R3.candles++; lampB.base = 8 + 5 * R3.candles; fearBase = Math.max(0.08, 0.3 - 0.035 * R3.candles); flicker(0.4); }
 function figBehindC() {           // sosok muncul di belakang pemain (versi untuk petilasan)
-  const z = raka.z + 5.4, x = raka.x + 0.9; showFig(x, z); sfx.sting(); addFear(0.28); flicker(1.4); G_shake(0.6);
+  const z = ME.z + 5.4, x = ME.x + 0.9; showFig(x, z); sfx.sting(); addFear(0.28); flicker(1.4); G_shake(0.6);
   later(1.7, () => { if (!R3.laras) { hideFig(); flicker(0.6); } });
 }
 function LOOKAT(need, maxSecs) {    // kebalikan "jangan menoleh": kali ini pemain HARUS menoleh
@@ -1662,6 +1680,147 @@ function startBab3() {
   startScript(bab3());
 }
 
+/* =====================  MULTIPLAYER ONLINE (BETA)  ===================== */
+// Dua pemain: HOST memegang Raka dan menjalankan cerita; TAMU memegang Dinda dan menjalankan salinan cerita yang sama,
+// selesai tiap langkahnya diputuskan host. Lewat broker MQTT publik (WebSocket TLS), tanpa akun. Untuk uji coba saja.
+const MP_BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+const MP_ROOT = 'selendanghijau-7q2/v1/';
+const NET = { role: 'solo', code: '', ws: null, ready: false, peer: false, began: false, buf: new Uint8Array(0), pub: '', sub: '', now: 0, rxT: 0, pingT: 0, snapT: 0, posT: 0, helloT: 0, done: {}, guestReady: false, startCh: 0, startTry: 0, startT: 0, msg: '' };
+let ME = raka;
+let STEPN = 0;
+const mEnc = new TextEncoder(), mDec = new TextDecoder();
+function mStr(s) { const b = mEnc.encode(s); return [b.length >> 8, b.length & 255, ...b]; }
+function mLen(n) { const o = []; do { let d = n % 128; n = Math.floor(n / 128); if (n > 0) d |= 128; o.push(d); } while (n > 0); return o; }
+function mPkt(b0, body) { return new Uint8Array([b0, ...mLen(body.length), ...body]); }
+function mParse(cb) {
+  for (;;) {
+    const b = NET.buf; if (b.length < 2) return;
+    let mult = 1, len = 0, i = 1, byte;
+    do { if (i >= b.length) return; byte = b[i++]; len += (byte & 127) * mult; mult *= 128; } while (byte & 128);
+    if (b.length < i + len) return;
+    const body = b.slice(i, i + len), b0 = b[0]; NET.buf = b.slice(i + len); cb(b0, body);
+  }
+}
+function netSend(o) {
+  if (!NET.ws || !NET.ready || NET.ws.readyState !== 1) return;
+  try { o.v = 1; NET.ws.send(mPkt(0x30, [...mStr(NET.pub), ...mEnc.encode(JSON.stringify(o))])); } catch (e) { }
+}
+function mqttConnect(idx, subTopic, onReady, onFail) {
+  let ws; try { ws = new WebSocket(MP_BROKERS[idx], 'mqtt'); } catch (e) { onFail('WebSocket tidak tersedia di perangkat ini'); return; }
+  ws.binaryType = 'arraybuffer'; NET.ws = ws; NET.buf = new Uint8Array(0); NET.ready = false;
+  let settled = false;
+  const fail = m => { if (settled) return; settled = true; clearTimeout(to); try { ws.close(); } catch (e) { } onFail(m); };
+  const to = setTimeout(() => fail('koneksi ke server kehabisan waktu'), 7000);
+  ws.onopen = () => ws.send(mPkt(0x10, [0, 4, 77, 81, 84, 84, 4, 2, 0, 60, ...mStr('sh' + Math.random().toString(16).slice(2, 10))]));
+  ws.onerror = () => fail('tidak bisa tersambung ke server');
+  ws.onclose = () => { if (!settled) fail('koneksi ditutup server'); else if (NET.ws === ws) netLost('koneksi terputus'); };
+  ws.onmessage = ev => {
+    const a = new Uint8Array(ev.data), c = new Uint8Array(NET.buf.length + a.length); c.set(NET.buf); c.set(a, NET.buf.length); NET.buf = c;
+    mParse((b0, body) => {
+      const type = b0 >> 4;
+      if (type === 2) { if (body[1] === 0) ws.send(mPkt(0x82, [0, 1, ...mStr(subTopic), 0])); else fail('ditolak server'); }
+      else if (type === 9) { if (!settled) { settled = true; clearTimeout(to); NET.ready = true; NET.rxT = NET.now; onReady(); } }
+      else if (type === 3) {
+        const tl = (body[0] << 8) | body[1]; let p = 2 + tl; if (((b0 >> 1) & 3) > 0) p += 2;
+        let o = null; try { o = JSON.parse(mDec.decode(body.slice(p))); } catch (e) { }
+        if (o && o.v === 1) { NET.rxT = NET.now; netOn(o); }
+      }
+    });
+  };
+}
+function netClose() {
+  const w = NET.ws; NET.ws = null; NET.ready = false;
+  if (w) { try { w.onclose = null; w.onerror = null; w.close(); } catch (e) { } }
+  NET.role = 'solo'; NET.peer = false; NET.began = false; NET.done = {}; NET.guestReady = false; NET.startCh = 0; STEPN = 0;
+  ME = raka; [raka, dinda, bayu, mbah].forEach(a => { a.remote = false; a.net = null; });
+}
+function netLost(why) {
+  const wasPlaying = NET.began, role = NET.role; netClose();
+  if (wasPlaying || role !== 'solo') { showTitle(); toast('Multiplayer terputus: ' + why, 6000); }
+}
+const CODE_ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function rndCode() { let s = ''; for (let i = 0; i < 4; i++) s += CODE_ALPHA[Math.floor(Math.random() * CODE_ALPHA.length)]; return s; }
+function mpStatus(t) { NET.msg = t; const e = $('#mpStatus'); if (e) e.textContent = t; }
+function mpHost() {
+  netClose(); showPanel('<div class="board"><h1>Main berdua</h1><p id="mpStatus">Membuat ruangan...</p></div>');
+  const tryIdx = idx => {
+    if (idx >= MP_BROKERS.length) { showPanel('<div class="board"><h1>Gagal</h1><p>Tidak bisa tersambung ke server. Periksa internet, lalu coba lagi.</p><button class="cta" data-do="mpHost">Coba lagi</button><button class="cta alt" data-do="menu">Kembali</button></div>'); return; }
+    const code = rndCode() + String.fromCharCode(65 + idx);
+    NET.code = code; NET.pub = MP_ROOT + code + '/h'; NET.sub = MP_ROOT + code + '/g';
+    mqttConnect(idx, NET.sub, () => { NET.role = 'host'; NET.peer = false; renderHostLobby(); }, () => tryIdx(idx + 1));
+  };
+  tryIdx(0);
+}
+function renderHostLobby() {
+  if (NET.began) return;
+  const btn = NET.peer ? '<button class="cta" data-do="mpStart1">Mulai dari Bab 1</button><button class="cta alt" data-do="mpStart2">Mulai dari Bab 2</button><button class="cta alt" data-do="mpStart3">Mulai dari Bab 3</button>' : '';
+  showPanel('<div class="board"><h1>Ruangan</h1><p>Berikan kode ini ke temanmu:</p><div style="font:800 40px monospace;letter-spacing:.25em;text-align:center;color:#f2b84b;margin:8px 0">' + NET.code + '</div><p id="mpStatus">' + (NET.startCh ? 'Menyiapkan permainan...' : (NET.peer ? 'Teman sudah terhubung! Kamu jadi Raka, temanmu jadi Dinda.' : 'Menunggu teman bergabung...')) + '</p>' + btn + '<button class="cta alt" data-do="mpCancel">Batal</button></div>');
+}
+function showJoinForm(msg) {
+  showPanel('<div class="board"><h1>Gabung ruangan</h1><p>Masukkan kode dari temanmu:</p><input id="joinCode" maxlength="5" autocomplete="off" autocapitalize="characters" placeholder="KODE"><p id="mpStatus">' + (msg || '') + '</p><button class="cta" data-do="mpGo">Gabung</button><button class="cta alt" data-do="menu">Kembali</button></div>');
+}
+function mpJoin(raw) {
+  const code = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), idx = code.charCodeAt(4) - 65;
+  if (code.length !== 5 || !(idx >= 0 && idx < MP_BROKERS.length)) { showJoinForm('Kode tidak valid.'); return; }
+  netClose(); mpStatus('Menyambung...');
+  NET.code = code; NET.pub = MP_ROOT + code + '/g'; NET.sub = MP_ROOT + code + '/h';
+  mqttConnect(idx, NET.sub, () => { NET.role = 'guest'; NET.helloT = 0; showPanel('<div class="board"><h1>Ruangan ' + code + '</h1><p id="mpStatus">Tersambung. Menunggu host...</p><button class="cta alt" data-do="mpCancel">Keluar</button></div>'); }, m => showJoinForm('Gagal: ' + m + '.'));
+}
+function mpBegin(role, ch) {
+  if (NET.began) return; NET.began = true; NET.done = {}; STEPN = 0; NET.startCh = 0;
+  NET.role = role; hidePanel();
+  const guest = role === 'guest';
+  raka.remote = guest; bayu.remote = guest; mbah.remote = guest; dinda.remote = !guest; ME = guest ? dinda : raka;
+  [startBab1, startBab2, startBab3][ch - 1]();
+}
+function packS() { return { f: S.flags, i: S.items, n: S.notes, d: S.finds }; }
+function syncS(o) { S.flags = o.f || {}; S.items = o.i || []; S.notes = o.n || []; S.finds = o.d || []; }
+const r2 = v => Math.round(v * 100) / 100;
+function netOn(o) {
+  const t = o.t;
+  if (NET.role === 'host') {
+    if (t === 'hello') { if (o.b !== BUILD) { netSend({ t: 'x', b: BUILD }); toast('Versi game temanmu berbeda (' + o.b + '). Samakan dulu versinya.', 6000); return; } if (!NET.peer) { NET.peer = true; if (!NET.began && !NET.startCh) renderHostLobby(); } netSend({ t: 'w' }); }
+    else if (t === 'p') { dinda.net = { x: o.x, z: o.z, f: o.f, m: o.m, s: o.s }; }
+    else if (t === 'k') { if (DLG.on && DLG.finished) DLG.tapped = true; }
+    else if (t === 'c') { if (el.choices.classList.contains('on') && LASTCHOICE < 0) LASTCHOICE = o.i; }
+    else if (t === 'a') { if (goal && goal.label && !goal.done && state === 'play') { goal.done = true; sfx.note(); } }
+    else if (t === 'r') { NET.guestReady = true; }
+  } else if (NET.role === 'guest') {
+    if (t === 'x') { netClose(); showJoinForm('Versi game berbeda: host memakai ' + o.b + ', kamu memakai ' + BUILD + '. Perbarui dulu.'); return; }
+    if (t === 'w') { NET.peer = true; }
+    else if (t === 'start') { if (!NET.began) mpBegin('guest', o.ch); netSend({ t: 'r' }); }
+    else if (t === 's') { [raka, bayu, mbah].forEach((a, i) => { const q = o.a[i]; if (q) { a.net = { x: q[0], z: q[1], f: q[2], m: q[3], s: q[4] }; a.g.visible = !!q[5]; } }); }
+    else if (t === 'd') { NET.done[o.n] = { lc: o.lc, S: o.S }; }
+  }
+}
+function netTick(dt) {
+  NET.now += dt;
+  if (!NET.ws || !NET.ready) return;
+  if (NET.now - NET.pingT > 25) { NET.pingT = NET.now; try { NET.ws.send(new Uint8Array([0xC0, 0])); } catch (e) { } }
+  if (NET.role === 'host') {
+    if (NET.startCh && !NET.began) {
+      NET.startT -= dt;
+      if (NET.startT <= 0) { NET.startT = 0.5; NET.startTry++; netSend({ t: 'start', ch: NET.startCh }); }
+      if (NET.guestReady || NET.startTry > 12) mpBegin('host', NET.startCh);
+    }
+    if (NET.began) {
+      NET.snapT -= dt;
+      if (NET.snapT <= 0) { NET.snapT = 0.1; netSend({ t: 's', a: [raka, bayu, mbah].map(a => [r2(a.x), r2(a.z), r2(a.face), a.moving ? 1 : 0, r2(a === ME ? Math.hypot(vel.x, vel.z) : (a.spd || 1.7)), a.g.visible ? 1 : 0]) }); }
+    }
+    if (NET.peer && NET.now - NET.rxT > 12) { NET.peer = false; dinda.remote = false; dinda.net = null; toast('Temanmu terputus. Dinda kembali dijalankan komputer.', 5000); }
+  } else if (NET.role === 'guest') {
+    if (!NET.began) { NET.helloT -= dt; if (NET.helloT <= 0) { NET.helloT = 1; netSend({ t: 'hello', b: BUILD }); } }
+    else {
+      NET.posT -= dt;
+      if (NET.posT <= 0) { NET.posT = 0.1; netSend({ t: 'p', x: r2(ME.x), z: r2(ME.z), f: r2(ME.face), m: ME.moving ? 1 : 0, s: r2(Math.hypot(vel.x, vel.z)) }); }
+    }
+    if (NET.now - NET.rxT > 12) netLost('host tidak merespons');
+  }
+}
+const mpStyle = document.createElement('style');
+mpStyle.textContent = '.board input{width:100%;padding:12px;border-radius:10px;border:2px solid rgba(230,234,219,.5);background:#0b1210;color:#fff;font:800 26px monospace;letter-spacing:.3em;text-transform:uppercase;text-align:center;-webkit-user-select:text;user-select:text;touch-action:auto;margin:6px 0}';
+if (document.head) document.head.appendChild(mpStyle);
+
 /* =====================  MODEL 3D (.glb / .fbx) OPSIONAL  ===================== */
 // Taruh file model di folder utama repo. Game mencoba nama di "files" berurutan; kalau tidak ada, tokoh tetap memakai balok.
 // h = tinggi tokoh (meter), rot = putar model (radian) kalau menghadap arah salah (mis. 3.1416 untuk berbalik).
@@ -1698,12 +1857,12 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v16';
+const BUILD = 'v17';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
 const modelState = {};
-function updVer() { verEl.textContent = BUILD + ' | ' + Object.keys(MODELS).concat(['pohon', 'gunung', 'torii', 'rumput', 'awan']).map(k => k + ':' + (modelState[k] || '-')).join(' '); }
+function updVer() { verEl.textContent = BUILD + (NET.role !== 'solo' ? ' [' + NET.role + ']' : '') + ' | ' + Object.keys(MODELS).concat(['pohon', 'gunung', 'torii', 'rumput', 'awan']).map(k => k + ':' + (modelState[k] || '-')).join(' '); }
 let rakaTopHex = 0xb6e3a0;
 function geoAxes(g) {
   g.computeBoundingBox(); const b = g.boundingBox;
@@ -1888,7 +2047,7 @@ let lodT = 0;
 function updateTreeLOD(dt) {
   if (!treeLOD.ready) return;
   lodT -= dt; if (lodT > 0) return; lodT = 0.3;
-  const px = raka.x, pz = raka.z, vis = 1.75 / Math.max(0.005, scene.fog ? scene.fog.density : 0.02);
+  const px = ME.x, pz = ME.z, vis = 1.75 / Math.max(0.005, scene.fog ? scene.fog.density : 0.02);
   const D = [Math.min(16 * LODK, vis * 0.3), Math.min(38 * LODK, vis * 0.6), Math.min(80 * LODK, vis)];
   const near = [];
   for (const t of treeLOD.spots) { const d = Math.hypot(t.x - px, t.z - pz); if (d < D[2]) near.push([d, t]); }
@@ -1999,7 +2158,7 @@ function updateGrass(dt) {
   if (!grass.ready) return;
   grT -= dt; if (grT > 0) return; grT = 0.35;
   if (QUAL === 'low') { for (let L = 0; L < 3; L++) grass.im[L].count = 0; return; }   // mode hemat: tanpa rumput
-  const px = raka.x, pz = raka.z, vis = 1.75 / Math.max(0.005, scene.fog ? scene.fog.density : 0.02);
+  const px = ME.x, pz = ME.z, vis = 1.75 / Math.max(0.005, scene.fog ? scene.fog.density : 0.02);
   const D = [Math.min(7 * LODK, vis * 0.25), Math.min(17 * LODK, vis * 0.55), Math.min(28 * LODK, vis * 0.9)], R = D[2];
   const i0 = Math.floor((px - R) / GC), i1 = Math.floor((px + R) / GC), j0 = Math.floor((pz - R) / GC), j1 = Math.floor((pz + R) / GC), near = [];
   for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
@@ -2024,13 +2183,14 @@ function updateGrass(dt) {
 /* =====================  ALUR APLIKASI  ===================== */
 let state = 'title';
 function showTitle() {
+  netClose();
   state = 'title'; ctrl = 'none'; SCRIPT = null; WAIT = null; dlgHide(); setObj(''); resetWorld();
   el.choices.classList.remove('on'); el.card.classList.remove('on'); el.act.classList.remove('on');
   el.fade.style.transition = 'none'; el.fade.style.opacity = '0';
   setMood('dusk');
   place(raka, START.x, START.z, Math.PI); place(dinda, START.x - 1.7, START.z + 2.0, Math.PI); place(bayu, START.x + 1.8, START.z + 2.6, Math.PI); place(mbah, MK.x, MK.z, 0); faceTo(mbah, START.x, START.z);
   cineTo(START.x + 6, 3.4, START.z + 8, 0, 12, -50, 3); snapCam();
-  showPanel('<div class="board"><h1>Selendang Hijau</h1><h2>Horor Gunung Pandan</h2><p>Tiga pendaki, satu larangan yang dilanggar. Cerita fiksi berlatar legenda Gunung Pandan, Bojonegoro. Pakai earphone dan putar HP ke mendatar.</p><button class="cta" data-do="new">Mulai Bab 1</button><button class="cta alt" data-do="bab2">Langsung ke Bab 2</button><button class="cta alt" data-do="bab3">Langsung ke Bab 3</button><button class="cta alt" data-do="credits">Kredit aset</button></div>');
+  showPanel('<div class="board"><h1>Selendang Hijau</h1><h2>Horor Gunung Pandan</h2><p>Tiga pendaki, satu larangan yang dilanggar. Cerita fiksi berlatar legenda Gunung Pandan, Bojonegoro. Pakai earphone dan putar HP ke mendatar.</p><button class="cta" data-do="new">Mulai Bab 1</button><button class="cta alt" data-do="bab2">Langsung ke Bab 2</button><button class="cta alt" data-do="bab3">Langsung ke Bab 3</button><button class="cta alt" data-do="mpHost">Main berdua (buat ruangan)</button><button class="cta alt" data-do="mpJoin">Main berdua (gabung ruangan)</button><button class="cta alt" data-do="credits">Kredit aset</button></div>');
 }
 function startBab1() {
   resetInput(); hidePanel(); S.flags = {}; S.notes = []; S.items = []; S.finds = []; resetWorld(); state = 'play';
@@ -2049,6 +2209,11 @@ el.panel.addEventListener('click', e => {
   else if (a === 'qual') { cycleQual(); state = 'play'; pauseGame(); }
   else if (a === 'resume') { hidePanel(); state = 'play'; }
   else if (a === 'menu') showTitle();
+  else if (a === 'mpHost') mpHost();
+  else if (a === 'mpJoin') showJoinForm('');
+  else if (a === 'mpGo') { const iv = $('#joinCode'); mpJoin(iv ? iv.value : ''); }
+  else if (a === 'mpStart1' || a === 'mpStart2' || a === 'mpStart3') { if (NET.role === 'host' && NET.peer && !NET.began) { NET.startCh = +a.slice(-1); NET.startTry = 0; NET.startT = 0; NET.guestReady = false; renderHostLobby(); } }
+  else if (a === 'mpCancel') showTitle();
 });
 function brightLabel() { return BRIGHT < 1.1 ? 'normal' : BRIGHT < 1.5 ? 'terang' : 'sangat terang'; }
 function cycleBright() { BRIGHT = BRIGHT < 1.1 ? 1.35 : BRIGHT < 1.5 ? 1.7 : 1; try { localStorage.setItem('sh_bright', String(BRIGHT)); } catch (e) { } applyMood(); }
@@ -2092,20 +2257,21 @@ function updatePlayer(dt) {
   const tvx = (-sy * my + cy * mx) * 3.4, tvz = (-cy * my - sy * mx) * 3.4;
   const k = Math.min(1, dt * 9);
   vel.x += (tvx - vel.x) * k; vel.z += (tvz - vel.z) * k;
-  const c = collide(raka.x + vel.x * dt, raka.z + vel.z * dt, 0.35, raka);
-  raka.x = c[0]; raka.z = c[1];
+  const c = collide(ME.x + vel.x * dt, ME.z + vel.z * dt, 0.35, ME);
+  ME.x = c[0]; ME.z = c[1];
   const sp = Math.hypot(vel.x, vel.z);
-  raka.moving = sp > 0.6;
-  if (raka.moving) raka.face += angDiff(Math.atan2(vel.x, vel.z) - raka.face) * Math.min(1, dt * 10);
-  if (raka.moving && clock - stepT > 0.48) { stepT = clock; sfx.step(); }
+  ME.moving = sp > 0.6;
+  if (ME.moving) ME.face += angDiff(Math.atan2(vel.x, vel.z) - ME.face) * Math.min(1, dt * 10);
+  if (ME.moving && clock - stepT > 0.48) { stepT = clock; sfx.step(); }
 }
 function updateGoal(t) {
   if (!goal) { beam.visible = false; return; }
   beam.visible = !goal.quiet;
   beam.position.set(goal.x, groundY(goal.x, goal.z) + 3.5, goal.z); beam.scale.set(1 + 0.15 * Math.sin(t * 3), 1, 1 + 0.15 * Math.sin(t * 3));
-  const d = Math.hypot(raka.x - goal.x, raka.z - goal.z);
-  if (d <= goal.r) { if (goal.label) { el.act.textContent = goal.label; el.act.classList.add('on'); } else goal.done = true; }
+  const d = Math.hypot(ME.x - goal.x, ME.z - goal.z);
+  if (d <= goal.r) { if (goal.label) { el.act.textContent = goal.label; el.act.classList.add('on'); } else if (NET.role !== 'guest') goal.done = true; }
   else el.act.classList.remove('on');
+  if (NET.role === 'host' && dinda.remote && dinda.net && !goal.label && !goal.done && Math.hypot(dinda.net.x - goal.x, dinda.net.z - goal.z) <= goal.r) goal.done = true;
 }
 function autoPlay() {
   if (DLG.on && DLG.finished) DLG.tapped = true;
@@ -2128,13 +2294,14 @@ function loop(now) {
   if (state === 'play' && !(portrait && !ignoreRot)) update(dt);
   else if (state === 'title') clock += dt;
   if (state === 'play' || state === 'end') updateB2(dt, clock);
+  netTick(dt);
   updateTreeLOD(dt);
   updateGrass(dt);
   updateActors(dt, clock);
   updateCamera(dt);
   // matahari/bulan dan bayangan mengikuti pemain
-  dir.position.set(raka.x + LIGHT_DIR[0] * 60, raka.y + LIGHT_DIR[1] * 60, raka.z + LIGHT_DIR[2] * 60);
-  dir.target.position.set(raka.x, raka.y, raka.z);
+  dir.position.set(ME.x + LIGHT_DIR[0] * 60, ME.y + LIGHT_DIR[1] * 60, ME.z + LIGHT_DIR[2] * 60);
+  dir.target.position.set(ME.x, ME.y, ME.z);
   sky.position.set(camera.position.x, camera.position.y, camera.position.z);
   cloudGroup.position.set(camera.position.x, camera.position.y, camera.position.z); cloudGroup.rotation.y += dt * 0.0015;
   for (const l of lamps) l.l.intensity = l.base * (0.93 + 0.07 * Math.sin(clock * 11) + (Math.random() < 0.02 ? -0.15 : 0));
@@ -2148,6 +2315,6 @@ function loop(now) {
     }
   }
 }
-if (window.__DEBUG) window.__dbg = { grass, cloudGroup, mountMat, cloudMat, vel, PH, treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
+if (window.__DEBUG) window.__dbg = { NET, get STEPN() { return STEPN; }, get ME() { return ME; }, get WAIT() { return WAIT; }, grass, cloudGroup, mountMat, cloudMat, vel, PH, treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
 showTitle();
 requestAnimationFrame(t => { last = t; requestAnimationFrame(loop); });
