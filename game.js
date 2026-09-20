@@ -403,16 +403,39 @@ const mbah = mkActor('Mbah Karto', person({ top: 0x2a2a35, skirt: 0x6b4a2a, skin
 
 function place(a, x, z, face) { a.x = x; a.z = z; if (face !== undefined) a.face = face; a.tx = null; a.follow = false; a.g.visible = true; a.y = groundY(x, z); }
 function faceTo(a, x, z) { a.face = Math.atan2(x - a.x, z - a.z); }
+// ---- pendamping (Dinda & Bayu): arah gerak pemain dihaluskan, dipakai untuk menaruh mereka di samping/depan ----
+const PH = { hx: 0, hz: -1, sp: 0, idleT: 0 };
+const SLOTS = { Dinda: { side: -1.5, back: 0.7 }, Bayu: { side: 1.8, back: -1.4 } };
+function updateHeading(dt) {
+  const sp = Math.hypot(vel.x, vel.z); PH.sp = sp;
+  if (sp > 0.8) {
+    const k = Math.min(1, dt * 3); PH.hx += (vel.x / sp - PH.hx) * k; PH.hz += (vel.z / sp - PH.hz) * k;
+    const l = Math.hypot(PH.hx, PH.hz) || 1; PH.hx /= l; PH.hz /= l; PH.idleT = 0;
+  } else PH.idleT += dt;
+}
 function updateActors(dt, t) {
+  updateHeading(dt);
   for (const a of ACT) {
     if (!a.g.visible) continue;
     if (a !== raka) {
       a.moving = false;
       if (a.follow) {
-        const yy = camYaw, rx = Math.cos(yy), rz = -Math.sin(yy), bx = Math.sin(yy), bz = Math.cos(yy);
-        const tx = raka.x + rx * a.off[0] + bx * a.off[1], tz = raka.z + rz * a.off[0] + bz * a.off[1];
-        const d = Math.hypot(tx - a.x, tz - a.z);
-        if (d > 0.7) { a.tx = tx; a.tz = tz; a.spd = clamp(d * 2.2, 1.5, 4.4); }
+        if (PH.idleT > 1.4) {
+          // pemain berhenti: pendamping berdiri santai, sesekali bergeser dan menoleh
+          a.wT = (a.wT === undefined ? 1.5 : a.wT) - dt;
+          if (a.tx === null && a.wT <= 0) {
+            const ang = Math.random() * 6.283, rr2 = 1.4 + Math.random() * 1.4;
+            a.tx = raka.x + Math.cos(ang) * rr2; a.tz = raka.z + Math.sin(ang) * rr2; a.spd = 1.0; a.wT = 3.5 + Math.random() * 5;
+          }
+        } else {
+          // pemain berjalan: berjalan berdampingan (satu di kiri-belakang, satu di kanan-depan), posisinya bergeser pelan
+          const sl = SLOTS[a.name] || { side: a.off[0], back: a.off[1] };
+          const fx = PH.hx, fz = PH.hz;
+          const side = sl.side * (1 + 0.22 * Math.sin(t * 0.45 + a.seed)), back = sl.back + 0.7 * Math.cos(t * 0.31 + a.seed * 1.7);
+          const tx = raka.x + (-fz) * side - fx * back, tz = raka.z + fx * side - fz * back;
+          const d = Math.hypot(tx - a.x, tz - a.z);
+          if (d > 0.5) { a.tx = tx; a.tz = tz; a.spd = clamp(PH.sp * (0.8 + d * 0.3) + 0.4, 1.2, 4.8); }
+        }
       }
       if (a.tx !== null) {
         const dx = a.tx - a.x, dz = a.tz - a.z, d = Math.hypot(dx, dz);
@@ -423,7 +446,7 @@ function updateActors(dt, t) {
           a.x = c[0]; a.z = c[1];
           a.face += angDiff(Math.atan2(dx, dz) - a.face) * Math.min(1, dt * 8); a.moving = true;
         }
-      } else if (a.watch) {
+      } else if (a.watch || (a.follow && PH.idleT > 1.4)) {
         const want = Math.atan2(raka.x - a.x, raka.z - a.z);
         a.face += angDiff(want - a.face) * Math.min(1, dt * 3);
       }
@@ -438,12 +461,13 @@ function updateActors(dt, t) {
     P.arms[0].rotation.x = -Math.sin(a.ph) * 0.6 * sw; P.arms[1].rotation.x = Math.sin(a.ph) * 0.6 * sw;
     P.body.position.y = Math.abs(Math.sin(a.ph)) * 0.04 * sw + Math.sin(t * 1.6 + a.seed) * 0.006;
     if (a !== raka) {
-      const rel = a.watch ? clamp(angDiff(Math.atan2(raka.x - a.x, raka.z - a.z) - a.face), -0.9, 0.9) : 0;
+      const rel = (a.watch || (a.follow && PH.idleT > 1.4)) ? clamp(angDiff(Math.atan2(raka.x - a.x, raka.z - a.z) - a.face), -0.9, 0.9) : 0;
       a.headYaw = lerp(a.headYaw, rel, Math.min(1, dt * 4)); P.head.rotation.y = a.headYaw;
     }
     if (a.mixer) {
       const want = (a.moving && a.acts.walk) ? 'walk' : 'idle';
       if (want !== a.cur && a.acts[want]) { const from = a.acts[a.cur], to = a.acts[want]; to.reset().play(); if (from) from.crossFadeTo(to, 0.25, false); a.cur = want; }
+      if (a.acts.walk && a.cur === 'walk') a.acts.walk.timeScale = clamp((a === raka ? Math.hypot(vel.x, vel.z) : a.spd) / 1.7, 0.6, 2.3);
       a.mixer.update(dt);
     }
   }
@@ -1397,7 +1421,7 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v12';
+const BUILD = 'v13';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
@@ -1514,6 +1538,7 @@ function attachModel(target, cfg, key) {
       const root = gltf.scene, g = target.g;
       root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
       if (/\.fbx$/i.test(fname)) prepFbx(root);
+      else root.traverse(o => { if (o.isMesh && o.material && o.material.map && !o.material.isMeshLambertMaterial) { const m0 = o.material, n0 = new THREE.MeshLambertMaterial({ map: m0.map, side: m0.side }); n0.name = m0.name; o.material = n0; } });
       const size = new THREE.Vector3(); new THREE.Box3().setFromObject(root).getSize(size);
       root.scale.setScalar(cfg.h / Math.max(0.01, size.y) / (g.scale.y || 1));
       root.position.y = -new THREE.Box3().setFromObject(root).min.y;
@@ -1726,6 +1751,6 @@ function loop(now) {
     }
   }
 }
-if (window.__DEBUG) window.__dbg = { treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
+if (window.__DEBUG) window.__dbg = { vel, PH, treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
 showTitle();
 requestAnimationFrame(t => { last = t; requestAnimationFrame(loop); });
