@@ -677,7 +677,7 @@ function* bab1() {
   yield SAY('Raka', 'Aku cuma bawa jaket ini...');
   yield CHOICE(['Balik jaketnya, pakai sisi abu-abu', 'Tetap pakai. Cuma cerita orang tua.']);
   if (LASTCHOICE === 0) {
-    S.flags.jaketDibalik = true; raka.p.topMat.color.setHex(0x8a8f96); saveGame();
+    S.flags.jaketDibalik = true; setRakaTop(0x8a8f96); saveGame();
     yield DO(() => frame2(raka, mbah, 4.4, 1, 1.6));
     yield SAY('Mbah Karto', 'Bagus. Sisi dalamnya aman. Tapi jangan sampai terbuka.');
   } else {
@@ -758,7 +758,7 @@ function resetWorld() {
   clearing.visible = false; hideFig(); wispS.on = false; wisp.visible = false; dLamp.visible = false; brace.visible = false; braceGlow.visible = false;
   showTapes(0); scarfMesh.visible = true; bayuScarf.visible = false; dindaScarf.visible = false; photoMesh.visible = true;
   fear = 0; fearBase = 0; darkK = 0; shakeT = 0; fearEl.style.opacity = '0';
-  raka.p.topMat.color.setHex(0xb6e3a0);
+  setRakaTop(0xb6e3a0);
 }
 function startBab2() {
   resetInput(); hidePanel(); resetWorld();
@@ -1359,7 +1359,7 @@ function enterClearing() {
 // Taruh file model di folder utama repo. Game mencoba nama di "files" berurutan; kalau tidak ada, tokoh tetap memakai balok.
 // h = tinggi tokoh (meter), rot = putar model (radian) kalau menghadap arah salah (mis. 3.1416 untuk berbalik).
 const MODELS = {
-  raka: { files: ['raka.glb', 'raka.fbx', 'Smooth_Male_Shirt.fbx', 'Male_Shirt.fbx', 'Smooth_Male_Casual.fbx', 'Male_Casual.fbx'], h: 1.75, rot: 0, pal: { skin: 0xb98a62, hair: 0x18120e, top: 0xb6e3a0, bottom: 0x2b3448 } },
+  raka: { files: ['raka.glb', 'raka.fbx', 'Smooth_Male_Shirt.fbx', 'Male_Shirt.fbx', 'Smooth_Male_Casual.fbx', 'Male_Casual.fbx'], h: 1.75, rot: 0, tint: true, pal: { skin: 0xb98a62, hair: 0x18120e, top: 0xb6e3a0, bottom: 0x2b3448 } },
   dinda: { files: ['dinda.glb', 'dinda.fbx'], h: 1.62, rot: 0, pal: { skin: 0xc79a72, hair: 0x120d0a, top: 0x8a2f3a, bottom: 0x2a2a34 } },
   bayu: { files: ['bayu.glb', 'bayu.fbx', 'Smooth_Male_LongSleeve.fbx', 'Male_LongSleeve.fbx'], h: 1.78, rot: 0, pal: { skin: 0xd7a67d, hair: 0x2a2018, top: 0xd9782b, bottom: 0x3a4a3a } },
   mbah: { files: ['mbah.glb', 'mbah.fbx', 'Smooth_Male_Suit.fbx', 'Male_Suit.fbx'], h: 1.62, rot: 0, pal: { skin: 0xb98a60, hair: 0xe6e6e0, top: 0x2a2a35, bottom: 0x2a2a35 } },
@@ -1367,6 +1367,56 @@ const MODELS = {
 };
 const gltfLoader = new GLTFLoader(), fbxLoader = new FBXLoader();
 let animToastShown = false;
+const BUILD = 'v7';
+const verEl = document.createElement('div');
+Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
+if (document.body) document.body.appendChild(verEl);
+const modelState = {};
+function updVer() { verEl.textContent = BUILD + ' | ' + Object.keys(MODELS).map(k => k + ':' + (modelState[k] || '-')).join(' '); }
+let rakaTopHex = 0xb6e3a0;
+function geoAxes(g) {
+  g.computeBoundingBox(); const b = g.boundingBox;
+  const mn = [b.min.x, b.min.y, b.min.z], mx = [b.max.x, b.max.y, b.max.z], ext = [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]];
+  const up = ext[1] >= ext[0] && ext[1] >= ext[2] ? 1 : (ext[2] >= ext[0] ? 2 : 0);
+  const side = up === 0 ? (ext[1] >= ext[2] ? 1 : 2) : (up === 1 ? (ext[0] >= ext[2] ? 0 : 2) : (ext[0] >= ext[1] ? 0 : 1));
+  return { mn, up, side, h: ext[up] || 1, cs: (mn[side] + mx[side]) / 2, hw: (ext[side] / 2) || 1 };
+}
+function vertT(pos, ax, i) {
+  const v = a => a === 0 ? pos.getX(i) : (a === 1 ? pos.getY(i) : pos.getZ(i));
+  return { t: (v(ax.up) - ax.mn[ax.up]) / ax.h, a: Math.abs(v(ax.side) - ax.cs) / ax.hw };
+}
+// Warnai bagian baju (dada-perut) dengan warna tertentu, apa pun cara model menyimpan warnanya.
+function tintTop(root, hex, pal) {
+  const meshes = []; root.traverse(o => { if (o.isMesh) meshes.push(o); });
+  meshes.forEach(o => {
+    const g = o.geometry, pos = g && g.attributes && g.attributes.position; if (!pos || !pos.count) return;
+    const ax = geoAxes(g), col = g.attributes.color, c = new THREE.Color().setHex(hex);
+    if (col) {
+      g.userData = g.userData || {}; if (!g.userData.orig) g.userData.orig = col.array.slice();
+      const base = g.userData.orig;
+      for (let i = 0; i < pos.count; i++) {
+        const q = vertT(pos, ax, i), inTop = q.t >= 0.5 && q.t < 0.83 && !(q.a > 0.8 && q.t < 0.58);
+        col.array[3 * i] = inTop ? c.r : base[3 * i]; col.array[3 * i + 1] = inTop ? c.g : base[3 * i + 1]; col.array[3 * i + 2] = inTop ? c.b : base[3 * i + 2];
+      }
+      col.needsUpdate = true; return;
+    }
+    if (Array.isArray(o.material) && g.groups && g.groups.length > 1) {
+      const sums = {};
+      g.groups.forEach(gr => {
+        const k = gr.materialIndex, e = sums[k] || (sums[k] = { s: 0, n: 0 });
+        for (let i = gr.start; i < gr.start + gr.count && i < pos.count; i++) { e.s += vertT(pos, ax, i).t; e.n++; }
+      });
+      let best = -1, bn = 0;
+      for (const k in sums) { const m = sums[k].s / (sums[k].n || 1); if (m >= 0.5 && m < 0.85 && sums[k].n > bn) { best = +k; bn = sums[k].n; } }
+      const mat = best >= 0 ? o.material[best] : null;
+      if (mat && mat.color) { mat.map = null; mat.color.setHex(hex); if (mat.emissive) mat.emissive.copy(mat.color).multiplyScalar(0.16); mat.needsUpdate = true; return; }
+    }
+    const P = pal || {};
+    bandColor(o, { skin: P.skin || 0xc79a72, hair: P.hair || 0x18120e, top: hex, bottom: P.bottom || 0x2a2f3a, shoe: 0x1c1a18 });
+  });
+}
+function setRakaTop(hex) { rakaTopHex = hex; raka.p.topMat.color.setHex(hex); if (raka.root3d) tintTop(raka.root3d, hex, MODELS.raka.pal); }
+
 function loadModelFile(files, i, ok, fail) {
   if (i >= files.length) { fail(); return; }
   const f = files[i], isFbx = /\.fbx$/i.test(f);
@@ -1420,7 +1470,7 @@ function fixModelColors(root, cfg, fname) {
   root.traverse(o => { if (!o.isMesh) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m && m.emissive && m.color && !m.userData.lit) { m.userData.lit = true; m.emissive.copy(m.color).multiplyScalar(0.16); } }); });
   if (fixed && !colorToastShown) { colorToastShown = true; toast('Warna model tidak terbaca, dipakai warna cadangan (' + fname + '; bahan: ' + names.slice(0, 6).join(', ') + ')', 9000); }
 }
-function attachModel(target, cfg) {
+function attachModel(target, cfg, key) {
   loadModelFile(cfg.files, 0, (gltf, fname) => {
     try {
       const root = gltf.scene, g = target.g;
@@ -1431,7 +1481,8 @@ function attachModel(target, cfg) {
       const holder = new THREE.Group(); holder.rotation.y = cfg.rot || 0; holder.add(root);
       g.children.slice().forEach(c => { c.visible = false; });
       g.add(holder);
-      setTimeout(() => { try { fixModelColors(root, cfg, fname); } catch (e) { console.warn('warna model:', e); } }, 1500);
+      target.root3d = root; modelState[key] = fname.replace(/\.(fbx|glb)$/i, '').replace(/^Smooth_/, 'S_'); updVer();
+      setTimeout(() => { try { fixModelColors(root, cfg, fname); if (cfg.tint) tintTop(root, rakaTopHex, cfg.pal); } catch (e) { console.warn('warna model:', e); } }, 1500);
       if (gltf.animations && gltf.animations.length) {
         const mixer = new THREE.AnimationMixer(root), acts = {}, names = [];
         gltf.animations.forEach(cl => {
@@ -1445,10 +1496,11 @@ function attachModel(target, cfg) {
         acts.idle.play(); target.mixer = mixer; target.acts = acts; target.cur = 'idle';
       }
     } catch (e) { console.warn('Model gagal dipasang (' + fname + '):', e); }
-  }, () => { /* tidak ada file model: tetap pakai balok */ });
+  }, () => { modelState[key] = 'x'; updVer(); });
 }
-[['raka', raka], ['dinda', dinda], ['bayu', bayu], ['mbah', mbah]].forEach(p => attachModel(p[1], MODELS[p[0]]));
-attachModel(fig, MODELS.laras);
+[['raka', raka], ['dinda', dinda], ['bayu', bayu], ['mbah', mbah]].forEach(p => attachModel(p[1], MODELS[p[0]], p[0]));
+attachModel(fig, MODELS.laras, 'laras');
+updVer();
 
 /* =====================  ALUR APLIKASI  ===================== */
 let state = 'title';
