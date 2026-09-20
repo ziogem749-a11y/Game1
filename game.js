@@ -186,6 +186,7 @@ function addBox(parent, w, h, d, color, x, y, z) {
 /* ---------- tumbukan ---------- */
 const circles = [];
 const boxes = [];
+const TREE_SPOTS = [], BLOBS = [];   // titik pohon dunia + pohon 'bulat' cadangan (disembunyikan bila pohon asli termuat)
 const BOUNDS = { x0: -33, x1: 33, z0: -24.5, z1: 24 };
 function collide(x, z, r, self) {
   x = clamp(x, BOUNDS.x0, BOUNDS.x1); z = clamp(z, BOUNDS.z0, BOUNDS.z1);
@@ -238,9 +239,10 @@ function blockedSpot(x, z) {
     o.position.set(s[0], terrainH(s[0], s[1]) - 0.1, s[1]); o.rotation.set(0, rr(0, 6.28), 0); o.scale.set(sc, sc * rr(0.9, 1.15), sc); o.updateMatrix();
     trunks.setMatrixAt(i, o.matrix); crowns.setMatrixAt(i, o.matrix); crowns2.setMatrixAt(i, o.matrix);
     col.setHex(0x2f4a2a).lerp(new THREE.Color(0x4a5e2e), R()); crowns.setColorAt(i, col); crowns2.setColorAt(i, col);
-    if (Math.abs(s[0]) < 36 && s[1] > -32 && s[1] < 27) circles.push({ x: s[0], z: s[1], r: 0.55 * sc });
+    let cc = null; if (Math.abs(s[0]) < 36 && s[1] > -32 && s[1] < 27) { cc = { x: s[0], z: s[1], r: 0.55 * sc }; circles.push(cc); }
+    TREE_SPOTS.push({ x: s[0], z: s[1], c: cc });
   });
-  [trunks, crowns, crowns2].forEach(m => { m.frustumCulled = false; m.castShadow = false; scene.add(m); });
+  [trunks, crowns, crowns2].forEach(m => { m.frustumCulled = false; m.castShadow = false; scene.add(m); BLOBS.push(m); });
 
   // rumpun pandan
   const pos = [], idx = [];
@@ -829,12 +831,12 @@ function mkPandanGeo() {
   const crowns = new THREE.InstancedMesh(g2[1], LMat({ color: 0xffffff, roughness: 1, flatShading: true }), ok.length);
   const o = new THREE.Object3D(), col = new THREE.Color();
   ok.forEach((s, i) => {
-    const sc = rr(0.9, 1.7);
+    const sc = rr(0.9, 1.7); TREE_SPOTS.push({ x: s[0], z: s[1], c: null });
     o.position.set(s[0], terrainH(s[0], s[1]) - 0.1, s[1]); o.rotation.set(0, rr(0, 6.28), 0); o.scale.set(sc, sc * rr(0.9, 1.3), sc); o.updateMatrix();
     trunks.setMatrixAt(i, o.matrix); crowns.setMatrixAt(i, o.matrix);
     col.setHex(0x22391f).lerp(new THREE.Color(0x3a4a26), R()); crowns.setColorAt(i, col);
   });
-  [trunks, crowns].forEach(m => { m.frustumCulled = false; scene.add(m); });
+  [trunks, crowns].forEach(m => { m.frustumCulled = false; scene.add(m); BLOBS.push(m); });
   // semak pandan di tepi jalur
   const pg = mkPandanGeo(), pand = [];
   for (let n = 0; n < 500 && pand.length < 80; n++) {
@@ -896,7 +898,7 @@ const tapes = [];
 (function buildMarkerTree() {
   const y = terrainH(MTREE.x, MTREE.z), g = new THREE.Group(); g.position.set(MTREE.x, y, MTREE.z); scene.add(g);
   const t = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.34, 4.6, 7), M(0x3a2b1c)); t.position.y = 2.3; t.castShadow = true; g.add(t);
-  const c = new THREE.Mesh(new THREE.IcosahedronGeometry(2.0, 0), LMat({ color: 0x24391f, roughness: 1, flatShading: true })); c.position.y = 5.4; g.add(c);
+  const c = new THREE.Mesh(new THREE.IcosahedronGeometry(2.0, 0), LMat({ color: 0x24391f, roughness: 1, flatShading: true })); c.position.y = 5.4; g.add(c); BLOBS.push(c);
   for (let i = 0; i < 4; i++) {
     const a = -1.2 - i * 0.7, tp = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.34, 0.05), LMat({ color: 0xd11a1a, emissive: 0x550808, roughness: 1 }));
     tp.position.set(Math.cos(a) * 0.36, 1.5 + i * 0.22, Math.sin(a) * 0.36 * -1); tp.rotation.y = -a + Math.PI / 2; tp.visible = false; g.add(tp); tapes.push(tp);
@@ -1006,8 +1008,8 @@ let photoMesh = null;
   const g2 = mkTreeGeos(), N = 46;
   const tr = new THREE.InstancedMesh(g2[0], LMat({ color: 0x33261a, roughness: 1, flatShading: true }), N);
   const cr = new THREE.InstancedMesh(g2[1], LMat({ color: 0xffffff, roughness: 1, flatShading: true }), N);
-  for (let i = 0; i < N; i++) { const a = i / N * Math.PI * 2 + rr(-0.05, 0.05), r = rr(24, 34), sc = rr(1.0, 1.7); o.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); o.rotation.set(0, rr(0, 6), 0); o.scale.set(sc, sc * rr(0.9, 1.3), sc); o.updateMatrix(); tr.setMatrixAt(i, o.matrix); cr.setMatrixAt(i, o.matrix); col.setHex(0x1f3322).lerp(new THREE.Color(0x33452a), R()); cr.setColorAt(i, col); }
-  [tr, cr].forEach(m => { m.frustumCulled = false; g.add(m); });
+  for (let i = 0; i < N; i++) { const a = i / N * Math.PI * 2 + rr(-0.05, 0.05), r = rr(24, 34), sc = rr(1.0, 1.7); TREE_SPOTS.push({ x: CL.x + Math.cos(a) * r, z: CL.z + Math.sin(a) * r, c: null }); o.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); o.rotation.set(0, rr(0, 6), 0); o.scale.set(sc, sc * rr(0.9, 1.3), sc); o.updateMatrix(); tr.setMatrixAt(i, o.matrix); cr.setMatrixAt(i, o.matrix); col.setHex(0x1f3322).lerp(new THREE.Color(0x33452a), R()); cr.setColorAt(i, col); }
+  [tr, cr].forEach(m => { m.frustumCulled = false; g.add(m); BLOBS.push(m); });
   const pgm = new THREE.InstancedMesh(mkPandanGeo(), LMat({ color: 0x3f6a2a, side: THREE.DoubleSide, roughness: 0.9, flatShading: true }), 26);
   for (let i = 0; i < 26; i++) { const a = rr(0, 6.28), r = rr(9, 21), sc = rr(0.8, 1.5); o.position.set(Math.cos(a) * r, 0, Math.sin(a) * r - 4); o.rotation.set(0, rr(0, 6), 0); o.scale.set(sc, sc, sc); o.updateMatrix(); pgm.setMatrixAt(i, o.matrix); }
   pgm.frustumCulled = false; g.add(pgm);
@@ -1395,7 +1397,7 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v11';
+const BUILD = 'v12';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
@@ -1539,50 +1541,68 @@ function attachModel(target, cfg, key) {
 attachModel(fig, MODELS.laras, 'laras');
 updVer();
 
-/* =====================  POHON DETAIL (pohon.glb)  ===================== */
-// pohon.glb berisi 3 jenis pohon (Tree_A, Tree_B, Tree_C). Dipasang beberapa saja di dekat jalur; pohon jauh disembunyikan agar HP tidak berat.
-const heroTrees = [];
-function heroSpots() {
-  let sd = 4242; const r = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
-  const spots = [];
-  const far = (x, z) => !spots.some(p => Math.hypot(p[0] - x, p[1] - z) < 6);
-  for (let n = 0; n < 2500 && spots.length < 24; n++) {          // Bab 1: sekitar pondok dan gapura
-    const z = -24 + r() * 44, sd2 = r() < 0.5 ? -1 : 1, x = trailX(z) + sd2 * (8 + r() * 10);
-    if (Math.abs(x) > 32 || Math.hypot(x - HUT.x, z - HUT.z) < 8 || Math.hypot(x - GATE.x, z - GATE.z) < 7 || !far(x, z)) continue;
-    spots.push([x, z]);
-  }
-  const sidePoly = [[SIDE0.x, SIDE0.z]].concat(SIDE);
-  const b1 = spots.length;
-  for (let n = 0; n < 4000 && spots.length < b1 + 34; n++) {     // Bab 2: sepanjang jalur mendaki
-    const z = -34 - r() * 100, sd2 = r() < 0.5 ? -1 : 1, x = trailX(z) + sd2 * (6.8 + r() * 6.5);
-    const q = nearOnPoly(sidePoly, x, z);
-    if (Math.hypot(x - POS1.x, z - POS1.z) < 7 || Math.hypot(x - q[0], z - q[1]) < 6 || Math.hypot(x - MTREE.x, z - MTREE.z) < 4 || Math.hypot(x - SCARF.x, z - SCARF.z) < 4 || !far(x, z)) continue;
-    spots.push([x, z]);
-  }
-  return { spots, r };
-}
+/* =====================  HUTAN POHON ASLI (pohon.glb: LOD + instancing)  ===================== */
+// pohon.glb berisi 3 jenis pohon x 3 tingkat detail (Tree_A_L0 dekat, _L1 sedang, _L2 jauh).
+// Semua pohon digambar dengan InstancedMesh dan tingkat detailnya dipilih dari jarak ke pemain,
+// jadi hutan penuh pohon asli tanpa membebani HP. Pohon 'bulat' lama hanya dipakai bila file ini gagal dimuat.
+const LODCAP = [6, 20, 44];
+let LODK = QUAL === 'high' ? 1.25 : (QUAL === 'low' ? 0.55 : 1);
+const treeLOD = { ready: false, spots: [], buckets: null };
+const _to = new THREE.Object3D();
 gltfLoader.load('pohon.glb', gltf => {
   try {
-    const variants = []; gltf.scene.children.forEach(ch => { if (/^Tree_/.test(ch.name)) variants.push(ch); });
-    if (!variants.length) return;
-    gltf.scene.traverse(o => { if (o.isMesh && o.material && o.material.map) { const m = o.material; const n = new THREE.MeshLambertMaterial({ map: m.map, alphaTest: m.alphaTest || 0, side: m.side }); n.name = m.name; o.material = n; } });
-    const hs = heroSpots(), r = hs.r;
-    hs.spots.forEach((p, i) => {
-      const t = variants[i % variants.length].clone(true), k = 0.85 + r() * 0.5;
-      t.position.set(p[0], terrainH(p[0], p[1]) - 0.15, p[1]); t.rotation.y = r() * 6.28; t.scale.setScalar(k);
-      t.traverse(o => { if (o.isMesh) { o.castShadow = !!(o.material && /bark/i.test(o.material.name || '')); o.receiveShadow = false; } });
-      scene.add(t); heroTrees.push(t); circles.push({ x: p[0], z: p[1], r: 0.6 * k });
+    const parts = [[], [], []], mats = {};
+    gltf.scene.children.forEach(ch => {
+      const m = /^Tree_([ABC])_L([012])$/.exec(ch.name); if (!m) return;
+      const list = []; ch.traverse(o => { if (o.isMesh) list.push(o); });
+      parts['ABC'.indexOf(m[1])][+m[2]] = list;
     });
-    modelState.pohon = heroTrees.length + 'x'; updVer();
-  } catch (e) { console.warn('pohon.glb gagal dipasang:', e); }
+    if (!parts[0][0]) { modelState.pohon = 'x(LOD)'; updVer(); return; }
+    const matOf = o => {
+      const src = o.material, nm = (src && src.name) || 'bark';
+      if (!mats[nm]) mats[nm] = new THREE.MeshLambertMaterial({ map: src.map, alphaTest: src.alphaTest || 0, side: src.side });
+      return mats[nm];
+    };
+    treeLOD.buckets = [0, 1, 2].map(L => [0, 1, 2].map(v => (parts[v][L] || []).map(o => {
+      const im = new THREE.InstancedMesh(o.geometry, matOf(o), LODCAP[L]); im.count = 0; im.frustumCulled = false; scene.add(im); return im;
+    })));
+    let sd = 9137; const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+    const cand = TREE_SPOTS.slice();
+    for (let i = cand.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)), t = cand[i]; cand[i] = cand[j]; cand[j] = t; }
+    cand.forEach(sp => {
+      const k = 0.8 + rnd() * 0.5, md = 5.5 + 2.2 * k;
+      if (treeLOD.spots.some(a => Math.hypot(a.x - sp.x, a.z - sp.z) < Math.max(md, a.md))) {
+        if (sp.c) { const ci = circles.indexOf(sp.c); if (ci >= 0) circles.splice(ci, 1); }
+        return;
+      }
+      if (sp.c) sp.c.r = 0.55 * k;
+      treeLOD.spots.push({ x: sp.x, z: sp.z, y: groundY(sp.x, sp.z) - 0.15, k, md, ry: rnd() * 6.28, v: treeLOD.spots.length % 3 });
+    });
+    BLOBS.forEach(b => { b.visible = false; });
+    treeLOD.ready = true; modelState.pohon = treeLOD.spots.length + 'x'; updVer();
+  } catch (e) { console.warn('pohon.glb gagal dipasang:', e); modelState.pohon = 'err'; updVer(); }
 }, undefined, () => { modelState.pohon = 'x'; updVer(); });
-let heroT = 0, HERO_D = QUAL === 'high' ? 70 : 50;
-function updateHero(dt) {
-  heroT -= dt; if (heroT > 0 || !heroTrees.length) return; heroT = 0.4;
-  for (const t of heroTrees) t.visible = QUAL !== 'low' && Math.hypot(t.position.x - raka.x, t.position.z - raka.z) < HERO_D;
+let lodT = 0;
+function updateTreeLOD(dt) {
+  if (!treeLOD.ready) return;
+  lodT -= dt; if (lodT > 0) return; lodT = 0.3;
+  const px = raka.x, pz = raka.z, vis = 1.75 / Math.max(0.005, scene.fog ? scene.fog.density : 0.02);
+  const D = [Math.min(16 * LODK, vis * 0.3), Math.min(38 * LODK, vis * 0.6), Math.min(80 * LODK, vis)];
+  const near = [];
+  for (const t of treeLOD.spots) { const d = Math.hypot(t.x - px, t.z - pz); if (d < D[2]) near.push([d, t]); }
+  near.sort((a, b) => a[0] - b[0]);
+  const cnt = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], tot = [0, 0, 0];
+  for (const e of near) {
+    const d = e[0], t = e[1];
+    let L = d < D[0] ? 0 : (d < D[1] ? 1 : 2);
+    while (L < 3 && tot[L] >= LODCAP[L]) L++;
+    if (L >= 3) continue;
+    const idx = cnt[L][t.v]++; tot[L]++;
+    _to.position.set(t.x, t.y, t.z); _to.rotation.set(0, t.ry, 0); _to.scale.setScalar(t.k); _to.updateMatrix();
+    for (const im of treeLOD.buckets[L][t.v]) im.setMatrixAt(idx, _to.matrix);
+  }
+  for (let L = 0; L < 3; L++) for (let v = 0; v < 3; v++) for (const im of treeLOD.buckets[L][v]) { im.count = cnt[L][v]; im.instanceMatrix.needsUpdate = true; }
 }
-
-
 /* =====================  ALUR APLIKASI  ===================== */
 let state = 'title';
 function showTitle() {
@@ -1616,7 +1636,7 @@ function qualLabel() { return QUAL === 'auto' ? 'otomatis' : (QUAL === 'high' ? 
 function cycleQual() {
   QUAL = QUAL === 'auto' ? 'high' : (QUAL === 'high' ? 'low' : 'auto');
   try { localStorage.setItem('sh_qual', QUAL); } catch (e) { }
-  PR = QUAL === 'low' ? 0.75 : (QUAL === 'high' ? PR_HI : PR_MAX); renderer.setPixelRatio(PR); HERO_D = QUAL === 'high' ? 70 : 50;
+  PR = QUAL === 'low' ? 0.75 : (QUAL === 'high' ? PR_HI : PR_MAX); renderer.setPixelRatio(PR); LODK = QUAL === 'high' ? 1.25 : (QUAL === 'low' ? 0.55 : 1);
   const sh = QUAL === 'high'; renderer.shadowMap.enabled = sh; dir.castShadow = sh;
   scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) m.needsUpdate = true; }); });
   resize();
@@ -1688,7 +1708,7 @@ function loop(now) {
   if (state === 'play' && !(portrait && !ignoreRot)) update(dt);
   else if (state === 'title') clock += dt;
   if (state === 'play' || state === 'end') updateB2(dt, clock);
-  updateHero(dt);
+  updateTreeLOD(dt);
   updateActors(dt, clock);
   updateCamera(dt);
   // matahari/bulan dan bayangan mengikuti pemain
@@ -1701,11 +1721,11 @@ function loop(now) {
   if (raw > 0 && raw < 0.5) {
     avg += raw; avgN++;
     if (avgN >= 60) {
-      if (QUAL === 'auto' && avg / avgN > 0.045) { if (HERO_D > 45) { HERO_D -= 15; } else if (PR > 0.9) { PR = Math.max(0.75, PR - 0.25); renderer.setPixelRatio(PR); resize(); } else if (renderer.shadowMap.enabled) { renderer.shadowMap.enabled = false; dir.castShadow = false; } }
+      if (QUAL === 'auto' && avg / avgN > 0.045) { if (LODK > 0.55) { LODK = Math.max(0.5, LODK - 0.2); } else if (PR > 0.9) { PR = Math.max(0.75, PR - 0.25); renderer.setPixelRatio(PR); resize(); } else if (renderer.shadowMap.enabled) { renderer.shadowMap.enabled = false; dir.castShadow = false; } }
       avg = 0; avgN = 0;
     }
   }
 }
-if (window.__DEBUG) window.__dbg = { S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
+if (window.__DEBUG) window.__dbg = { treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
 showTitle();
 requestAnimationFrame(t => { last = t; requestAnimationFrame(loop); });
