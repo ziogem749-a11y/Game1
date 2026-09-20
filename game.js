@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 /* =====================================================================
    SELENDANG HIJAU  -  Bab 1: Kaki Gunung
@@ -432,6 +433,11 @@ function updateActors(dt, t) {
     if (a !== raka) {
       const rel = a.watch ? clamp(angDiff(Math.atan2(raka.x - a.x, raka.z - a.z) - a.face), -0.9, 0.9) : 0;
       a.headYaw = lerp(a.headYaw, rel, Math.min(1, dt * 4)); P.head.rotation.y = a.headYaw;
+    }
+    if (a.mixer) {
+      const want = (a.moving && a.acts.walk) ? 'walk' : 'idle';
+      if (want !== a.cur && a.acts[want]) { const from = a.acts[a.cur], to = a.acts[want]; to.reset().play(); if (from) from.crossFadeTo(to, 0.25, false); a.cur = want; }
+      a.mixer.update(dt);
     }
   }
 }
@@ -1022,6 +1028,7 @@ function setB2Lights(on) {
 }
 function updateB2(dt, t) {
   runTimers(dt);
+  if (fig.mixer && figOn) fig.mixer.update(dt);
   const active = b2on && (state === 'play' || state === 'end');
   fear = Math.max(fearBase, fear - dt * 0.012);
   fearEl.style.opacity = (b2on ? clamp(fear * 0.95, 0, 0.95) : 0).toFixed(3);
@@ -1346,6 +1353,44 @@ function enterClearing() {
   cineTo(CL.x + 2.4, 2.3, CL.z + 20, CL.x, 3.2, CL.z - 6, 0.35);
 }
 
+
+/* =====================  MODEL 3D (.glb) OPSIONAL  ===================== */
+// Taruh file .glb di folder utama repo dengan nama di bawah. Kalau file tidak ada, tokoh tetap memakai model balok.
+// h = tinggi tokoh (meter), rot = putar model (radian) kalau modelnya menghadap ke arah yang salah (mis. 3.1416).
+const MODELS = {
+  raka: { file: 'raka.glb', h: 1.75, rot: 0 },
+  dinda: { file: 'dinda.glb', h: 1.62, rot: 0 },
+  bayu: { file: 'bayu.glb', h: 1.78, rot: 0 },
+  mbah: { file: 'mbah.glb', h: 1.62, rot: 0 },
+  laras: { file: 'laras.glb', h: 1.9, rot: 0 }
+};
+const gltfLoader = new GLTFLoader();
+function attachModel(target, cfg) {
+  gltfLoader.load(cfg.file, gltf => {
+    try {
+      const root = gltf.scene, g = target.g;
+      root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+      const size = new THREE.Vector3(); new THREE.Box3().setFromObject(root).getSize(size);
+      root.scale.setScalar(cfg.h / Math.max(0.01, size.y) / (g.scale.y || 1));
+      root.position.y = -new THREE.Box3().setFromObject(root).min.y;
+      const holder = new THREE.Group(); holder.rotation.y = cfg.rot || 0; holder.add(root);
+      g.children.slice().forEach(c => { c.visible = false; });
+      g.add(holder);
+      if (gltf.animations && gltf.animations.length) {
+        const mixer = new THREE.AnimationMixer(root), acts = {};
+        gltf.animations.forEach(cl => {
+          const n = String(cl.name || '').toLowerCase();
+          if (/idle|stand|breath|wait/.test(n)) { if (!acts.idle) acts.idle = mixer.clipAction(cl); }
+          else if (/walk|run|jog/.test(n)) { if (!acts.walk) acts.walk = mixer.clipAction(cl); }
+        });
+        if (!acts.idle) acts.idle = mixer.clipAction(gltf.animations[0]);
+        acts.idle.play(); target.mixer = mixer; target.acts = acts; target.cur = 'idle';
+      }
+    } catch (e) { console.warn('Model gagal dipasang (' + cfg.file + '):', e); }
+  }, undefined, () => { /* file tidak ada: tetap pakai balok */ });
+}
+[['raka', raka], ['dinda', dinda], ['bayu', bayu], ['mbah', mbah]].forEach(p => attachModel(p[1], MODELS[p[0]]));
+attachModel(fig, MODELS.laras);
 
 /* =====================  ALUR APLIKASI  ===================== */
 let state = 'title';
