@@ -1,0 +1,8 @@
+{
+  "appId": "com.game1.selendanghijau",
+  "appName": "Selendang Hijau",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
