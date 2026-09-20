@@ -43,7 +43,7 @@ renderer.toneMappingExposure = 1.0;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x6a4a52, 0.016);
-const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 420);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 520);
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h, false);
@@ -115,6 +115,7 @@ function applyMood() {
   dir.color.lerpColors(a.dirCol, b.dirCol, t);
   dir.intensity = lerp(a.dirI, b.dirI, t);
   renderer.toneMappingExposure = lerp(a.exp, b.exp, t) * BRIGHT;
+  envApply(a, b, t);
 }
 function setMood(name) { moodA = moodB = name; moodT = 0; applyMood(); }
 
@@ -148,6 +149,7 @@ function addBox(parent, w, h, d, color, x, y, z) {
   m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m;
 }
 
+const PEAKS = [];   // kerucut gunung polos (disembunyikan bila gunung.glb termuat)
 (function buildTerrain() {
   const g = new THREE.PlaneGeometry(260, 260, 90, 90);
   g.rotateX(-Math.PI / 2); g.translate(0, 0, -30);
@@ -167,7 +169,7 @@ function addBox(parent, w, h, d, color, x, y, z) {
   t.receiveShadow = true; scene.add(t);
   // siluet puncak gunung di kejauhan
   const peak = new THREE.Mesh(new THREE.ConeGeometry(80, 120, 7), LMat({ color: 0x1b2233, roughness: 1, flatShading: true }));
-  peak.position.set(-10, 60, -190); scene.add(peak);
+  peak.position.set(-10, 60, -190); scene.add(peak); PEAKS.push(peak);
 })();
 
 (function buildTrail() {
@@ -1434,12 +1436,12 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v14';
+const BUILD = 'v15';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
 const modelState = {};
-function updVer() { verEl.textContent = BUILD + ' | ' + Object.keys(MODELS).concat(['pohon']).map(k => k + ':' + (modelState[k] || '-')).join(' '); }
+function updVer() { verEl.textContent = BUILD + ' | ' + Object.keys(MODELS).concat(['pohon', 'gunung', 'torii', 'rumput', 'awan']).map(k => k + ':' + (modelState[k] || '-')).join(' '); }
 let rakaTopHex = 0xb6e3a0;
 function geoAxes(g) {
   g.computeBoundingBox(); const b = g.boundingBox;
@@ -1641,6 +1643,122 @@ function updateTreeLOD(dt) {
   }
   for (let L = 0; L < 3; L++) for (let v = 0; v < 3; v++) for (const im of treeLOD.buckets[L][v]) { im.count = cnt[L][v]; im.instanceMatrix.needsUpdate = true; }
 }
+
+/* =====================  LINGKUNGAN: GUNUNG, AWAN, GERBANG TORII, RUMPUT  ===================== */
+// Warna per suasana untuk gunung latar dan awan (dicampur mulus oleh applyMood lewat envApply).
+Object.assign(MOODS.dusk, { cloud: C(0xf2a98a), cloudA: 0.85, mount: C(0x86687c) });
+Object.assign(MOODS.night, { cloud: C(0x4a5c96), cloudA: 0.6, mount: C(0x1c2540) });
+Object.assign(MOODS.deep, { cloud: C(0x222c50), cloudA: 0.55, mount: C(0x0d1220) });
+Object.assign(MOODS.petil, { cloud: C(0x1e3a36), cloudA: 0.5, mount: C(0x0d1a1a) });
+const DEF_CLOUD = C(0x888899), DEF_MOUNT = C(0x333344);
+const cloudMat = new THREE.MeshBasicMaterial({ color: 0xf2a98a, transparent: true, opacity: 0.85, depthWrite: false, fog: false });
+const mountMat = new THREE.MeshBasicMaterial({ color: 0x86687c, fog: false, side: THREE.DoubleSide });
+function envApply(a, b, t) {
+  cloudMat.color.lerpColors(a.cloud || DEF_CLOUD, b.cloud || DEF_CLOUD, t);
+  cloudMat.opacity = lerp(a.cloudA === undefined ? 0.6 : a.cloudA, b.cloudA === undefined ? 0.6 : b.cloudA, t);
+  mountMat.color.lerpColors(a.mount || DEF_MOUNT, b.mount || DEF_MOUNT, t);
+}
+
+/* awan: lembar awan dipotong-potong jadi beberapa bidang di kubah langit */
+const cloudGroup = new THREE.Group(); scene.add(cloudGroup);
+const CLOUD_RECTS = [[0.0233, 0.5949, 0.7127, 0.8724], [0.01, 0.2553, 0.5613, 0.5084], [0.5593, 0.3914, 0.9753, 0.5992], [0.3033, 0.0243, 0.6487, 0.2236], [0.714, 0.6392, 0.9747, 0.8829], [0.014, 0.0264, 0.2993, 0.2321], [0.7147, 0.0327, 0.91, 0.2911]];
+new THREE.TextureLoader().load('awan.png', tex => {
+  try {
+    tex.colorSpace = THREE.SRGBColorSpace; cloudMat.map = tex; cloudMat.needsUpdate = true;
+    const asp = 1024 / 647;
+    CLOUD_RECTS.forEach((r, i) => {
+      const wU = r[2] - r[0], hV = r[3] - r[1], wW = 150 + 90 * wU, hW = wW * (hV / wU) / asp;
+      const g = new THREE.PlaneGeometry(wW, hW), uv = g.attributes.uv;
+      for (let k = 0; k < uv.count; k++) uv.setXY(k, r[0] + uv.getX(k) * wU, (1 - r[3]) + uv.getY(k) * hV);
+      const m = new THREE.Mesh(g, cloudMat), az = (i / CLOUD_RECTS.length) * Math.PI * 2 + 0.4, el = (16 + ((i * 37) % 26)) * Math.PI / 180;
+      m.position.set(Math.sin(az) * Math.cos(el) * 235, Math.sin(el) * 235, -Math.cos(az) * Math.cos(el) * 235);
+      m.lookAt(0, 0, 0); m.renderOrder = -5; m.frustumCulled = false; cloudGroup.add(m);
+    });
+    modelState.awan = 'ok'; updVer();
+  } catch (e) { console.warn('awan gagal dipasang:', e); modelState.awan = 'err'; updVer(); }
+}, undefined, () => { modelState.awan = 'x'; updVer(); });
+
+/* gunung latar (menggantikan kerucut polos) */
+gltfLoader.load('gunung.glb', gltf => {
+  try {
+    let src = null; gltf.scene.traverse(o => { if (!src && o.isMesh) src = o; });
+    if (!src) return;
+    mountMat.map = src.material.map; mountMat.needsUpdate = true;
+    [[-40, -10, -300, 26, 0.2], [190, -10, -335, 22, -0.75], [-250, -10, -320, 20, 0.95]].forEach(p => {
+      const m = new THREE.Mesh(src.geometry, mountMat); m.position.set(p[0], p[1], p[2]); m.scale.set(p[3], p[3] * 0.95, p[3]); m.rotation.y = p[4]; m.frustumCulled = false; scene.add(m);
+    });
+    PEAKS.forEach(pk => { pk.visible = false; }); modelState.gunung = 'ok'; updVer();
+  } catch (e) { console.warn('gunung.glb gagal dipasang:', e); modelState.gunung = 'err'; updVer(); }
+}, undefined, () => { modelState.gunung = 'x'; updVer(); });
+
+/* gerbang torii: satu di pintu masuk jalan setapak samping (Bab 2), satu di petilasan */
+gltfLoader.load('torii.glb', gltf => {
+  try {
+    let src = null; gltf.scene.traverse(o => { if (!src && o.isMesh) src = o; });
+    if (!src) return;
+    const mat = new THREE.MeshLambertMaterial({ map: src.material.map, side: THREE.DoubleSide });
+    const put = (x, z, ry) => {
+      const m = new THREE.Mesh(src.geometry, mat); m.position.set(x, groundY(x, z) - 0.05, z); m.rotation.y = ry; scene.add(m);
+      const c = Math.cos(ry), sn = Math.sin(ry);
+      [-2.0, 2.0].forEach(o => circles.push({ x: x + c * o, z: z - sn * o, r: 0.45 }));
+    };
+    const dx = SIDE[0][0] - SIDE0.x, dz = SIDE[0][1] - SIDE0.z, dl = Math.hypot(dx, dz);
+    put(SIDE0.x + dx / dl * 1.6, SIDE0.z + dz / dl * 1.6, Math.atan2(dx, dz));
+    put(CL.x, CL.z + 9, 0);
+    modelState.torii = 'ok'; updVer();
+  } catch (e) { console.warn('torii.glb gagal dipasang:', e); modelState.torii = 'err'; updVer(); }
+}, undefined, () => { modelState.torii = 'x'; updVer(); });
+
+/* rumput: petak rumput asli ditebar mengelilingi pemain (tiga tingkat detail), tidak di jalan setapak */
+const grass = { ready: false, im: null, caps: [2, 8, 26] };
+const GC = 4;
+function gh(a, b) { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+gltfLoader.load('rumput.glb', gltf => {
+  try {
+    const lods = [];
+    gltf.scene.children.forEach(ch => { const m = /^Rumput_L([012])$/.exec(ch.name); if (!m) return; let mesh = null; ch.traverse(o => { if (!mesh && o.isMesh) mesh = o; }); lods[+m[1]] = mesh; });
+    if (!lods[0]) { modelState.rumput = 'x(LOD)'; updVer(); return; }
+    const src = lods[0].material, mat = new THREE.MeshLambertMaterial({ map: src.map, alphaTest: src.alphaTest || 0.5, side: THREE.DoubleSide });
+    grass.im = [0, 1, 2].map(L => {
+      const im = new THREE.InstancedMesh((lods[L] || lods[2]).geometry, mat, grass.caps[L]); im.count = 0; im.frustumCulled = false; scene.add(im); return im;
+    });
+    grass.ready = true; modelState.rumput = 'ok'; updVer();
+  } catch (e) { console.warn('rumput.glb gagal dipasang:', e); modelState.rumput = 'err'; updVer(); }
+}, undefined, () => { modelState.rumput = 'x'; updVer(); });
+function grassOk(x, z) {
+  if (z < 26 && z > -150 && Math.abs(x - trailX(z)) < 2.2) return false;
+  if (Math.hypot(x - HUT.x, z - HUT.z) < 5 || Math.hypot(x - GATE.x, z - GATE.z) < 5.5 || Math.hypot(x - POS1.x, z - POS1.z) < 5) return false;
+  const q = nearOnPoly([[SIDE0.x, SIDE0.z]].concat(SIDE), x, z); if (Math.hypot(x - q[0], z - q[1]) < 1.6) return false;
+  if (x > 400 && Math.hypot(x - CL.x, z - (CL.z - 5.4)) < 6) return false;
+  return true;
+}
+let grT = 0;
+function updateGrass(dt) {
+  if (!grass.ready) return;
+  grT -= dt; if (grT > 0) return; grT = 0.35;
+  if (QUAL === 'low') { for (let L = 0; L < 3; L++) grass.im[L].count = 0; return; }   // mode hemat: tanpa rumput
+  const px = raka.x, pz = raka.z, vis = 1.75 / Math.max(0.005, scene.fog ? scene.fog.density : 0.02);
+  const D = [Math.min(7 * LODK, vis * 0.25), Math.min(17 * LODK, vis * 0.55), Math.min(28 * LODK, vis * 0.9)], R = D[2];
+  const i0 = Math.floor((px - R) / GC), i1 = Math.floor((px + R) / GC), j0 = Math.floor((pz - R) / GC), j1 = Math.floor((pz + R) / GC), near = [];
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+    if (gh(i, j) > 0.75) continue;
+    const x = (i + 0.15 + 0.7 * gh(i + 91, j)) * GC, z = (j + 0.15 + 0.7 * gh(i, j + 57)) * GC, d = Math.hypot(x - px, z - pz);
+    if (d > R || !grassOk(x, z)) continue;
+    near.push([d, x, z, i, j]);
+  }
+  near.sort((a, b) => a[0] - b[0]);
+  const cnt = [0, 0, 0];
+  for (const e of near) {
+    let L = e[0] < D[0] ? 0 : (e[0] < D[1] ? 1 : 2);
+    while (L < 3 && cnt[L] >= grass.caps[L]) L++;
+    if (L >= 3) continue;
+    const idx = cnt[L]++, k = 0.8 + 0.7 * gh(e[3] + 13, e[4] + 7);
+    _to.position.set(e[1], groundY(e[1], e[2]) - 0.03, e[2]); _to.rotation.set(0, gh(e[3] + 29, e[4] + 3) * 6.283, 0); _to.scale.setScalar(k); _to.updateMatrix();
+    grass.im[L].setMatrixAt(idx, _to.matrix);
+  }
+  for (let L = 0; L < 3; L++) { grass.im[L].count = cnt[L]; grass.im[L].instanceMatrix.needsUpdate = true; }
+}
+
 /* =====================  ALUR APLIKASI  ===================== */
 let state = 'title';
 function showTitle() {
@@ -1747,12 +1865,14 @@ function loop(now) {
   else if (state === 'title') clock += dt;
   if (state === 'play' || state === 'end') updateB2(dt, clock);
   updateTreeLOD(dt);
+  updateGrass(dt);
   updateActors(dt, clock);
   updateCamera(dt);
   // matahari/bulan dan bayangan mengikuti pemain
   dir.position.set(raka.x + LIGHT_DIR[0] * 60, raka.y + LIGHT_DIR[1] * 60, raka.z + LIGHT_DIR[2] * 60);
   dir.target.position.set(raka.x, raka.y, raka.z);
   sky.position.set(camera.position.x, camera.position.y, camera.position.z);
+  cloudGroup.position.set(camera.position.x, camera.position.y, camera.position.z); cloudGroup.rotation.y += dt * 0.0015;
   for (const l of lamps) l.l.intensity = l.base * (0.93 + 0.07 * Math.sin(clock * 11) + (Math.random() < 0.02 ? -0.15 : 0));
   flies.rotation.y += dt * 0.05; flies.position.y = Math.sin(clock * 0.8) * 0.15;
   renderer.render(scene, camera);
@@ -1764,6 +1884,6 @@ function loop(now) {
     }
   }
 }
-if (window.__DEBUG) window.__dbg = { vel, PH, treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
+if (window.__DEBUG) window.__dbg = { grass, cloudGroup, mountMat, cloudMat, vel, PH, treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
 showTitle();
 requestAnimationFrame(t => { last = t; requestAnimationFrame(loop); });
