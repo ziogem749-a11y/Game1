@@ -417,7 +417,7 @@ function followLoose(a, dt, t) {
   if (a.fs === 'idle') {
     if (dp > P.far * a.fj) {
       a.rt -= dt * (dp > 7 ? 5 : 1);                // jeda dulu sebelum menyusul, seperti orang sungguhan (kalau sudah sangat jauh, langsung menyusul)
-      if (a.rt <= 0) { a.fs = 'walk'; a.so = (Math.random() < 0.5 ? -1 : 1) * (0.8 + Math.random() * 2.0); a.bo = -0.5 + Math.random() * 3.2; a.tx = null; }
+      if (a.rt <= 0) { a.fs = 'walk'; a.so = (Math.random() < 0.5 ? -1 : 1) * (0.8 + Math.random() * 2.0); a.bo = (FPV ? -1.3 : -0.5) + Math.random() * (FPV ? 2.6 : 3.2); a.tx = null; }
     } else {
       a.rt = P.react * (0.6 + Math.random() * 0.8);
       a.wT -= dt;                                   // dekat pemain: berdiri, kadang bergeser pelan
@@ -447,7 +447,7 @@ function updateActors(dt, t) {
   updateHeading(dt);
   for (const a of ACT) {
     if (a.remote && a.net) { const kk = Math.min(1, dt * 12); a.x += (a.net.x - a.x) * kk; a.z += (a.net.z - a.z) * kk; a.face += angDiff(a.net.f - a.face) * kk; a.moving = !!a.net.m; a.spd = a.net.s || 1.7; }   // posisi pemain jarak jauh tetap diperbarui walau sedang disembunyikan
-    if (!a.g.visible) continue;
+    if (!a.g.visible && !a._hidFP) continue;
     if (a === ME || a.remote) { /* pemain lokal: dari updatePlayer; pemain jarak jauh: dari jaringan */ }
     else {
       a.moving = false;
@@ -502,17 +502,34 @@ function frame2(a, b, dist, side, h) {
   const d = dist || 4.2;
   cineTo(mx + nx * d, groundY(mx, mz) + (h || 1.7), mz + nz * d, mx, groundY(mx, mz) + 1.3, mz, 2.6);
 }
+let FPV = true, camFov = 62, bobPh = 0, bobAmp = 0, fpEase = 0;
+try { FPV = localStorage.getItem('sh_fp') !== '0'; } catch (e) { }
 function updateCamera(dt) {
-  let dp, dl, rate = 7;
+  let dp, dl, rate = 7, fpNow = false;
   if (cineOn) { dp = cineOn.p; dl = cineOn.l; rate = cineOn.rate; }
-  else {
+  else if (FPV) {                                       // kamera orang pertama: setinggi mata
+    fpNow = true;
+    const cp = Math.cos(camPitch), sp = Math.sin(camPitch), spd = Math.hypot(vel.x, vel.z);
+    bobAmp += ((spd > 0.6 ? 1 : 0) - bobAmp) * Math.min(1, dt * 8); bobPh += dt * spd * 2.4;
+    const eyeY = ME.y + 1.62 + Math.sin(bobPh) * 0.035 * bobAmp, side = Math.sin(bobPh * 0.5) * 0.02 * bobAmp;
+    dp = [ME.x + Math.cos(camYaw) * side, eyeY, ME.z - Math.sin(camYaw) * side];
+    dl = [dp[0] - Math.sin(camYaw) * cp * 5, dp[1] - sp * 5, dp[2] - Math.cos(camYaw) * cp * 5];
+    rate = 6 + 54 * fpEase;
+  } else {
     const cp = Math.cos(camPitch), sp = Math.sin(camPitch);
     dp = [ME.x + Math.sin(camYaw) * cp * camDist, ME.y + 1.5 + sp * camDist, ME.z + Math.cos(camYaw) * cp * camDist];
     dl = [ME.x, ME.y + 1.35, ME.z];
   }
+  fpEase = fpNow ? Math.min(1, fpEase + dt / 0.6) : 0;   // peralihan halus dari adegan sinematik ke kamera mata
+  // badan pemain disembunyikan saat kamera orang pertama (dan ditampilkan lagi saat adegan sinematik)
+  if (fpNow) { if (ME.g.visible) { ME.g.visible = false; ME._hidFP = true; } }
+  else if (ME._hidFP) { ME.g.visible = true; ME._hidFP = false; }
+  const tf = fpNow ? ((CH.on && sprintOn) ? 78 : 70) : 62;
+  camFov += (tf - camFov) * Math.min(1, dt * 6);
+  if (Math.abs(camera.fov - camFov) > 0.02) { camera.fov = camFov; camera.updateProjectionMatrix(); }
   const k = 1 - Math.exp(-dt * rate);
   for (let i = 0; i < 3; i++) { CAMS.p[i] += (dp[i] - CAMS.p[i]) * k; CAMS.l[i] += (dl[i] - CAMS.l[i]) * k; }
-  const gy = groundY(CAMS.p[0], CAMS.p[2]) + 0.6;
+  const gy = groundY(CAMS.p[0], CAMS.p[2]) + (fpNow ? 0.9 : 0.6);
   let sx = 0, sy = 0;
   if (shakeT > 0) { const q = Math.min(shakeT, 1); sx = (Math.random() - 0.5) * q * 0.3; sy = (Math.random() - 0.5) * q * 0.22; shakeT = Math.max(0, shakeT - dt * 1.5); }
   camera.position.set(CAMS.p[0] + sx, Math.max(CAMS.p[1], gy) + sy, CAMS.p[2]);
@@ -633,7 +650,7 @@ touch.addEventListener('pointermove', e => {
     mv.x = dx * k / Rr; mv.y = -dy * k / Rr; el.knob.style.transform = 'translate(' + (dx * k) + 'px,' + (dy * k) + 'px)';
   } else if (e.pointerId === lookId) {
     const dx = e.clientX - lookP.x, dy = e.clientY - lookP.y; lookP.x = e.clientX; lookP.y = e.clientY;
-    camYaw -= dx * 0.006 * SENS; camPitch = clamp(camPitch + dy * 0.004 * SENS, -0.05, 0.9);
+    camYaw -= dx * 0.006 * SENS; camPitch = clamp(camPitch + dy * 0.004 * SENS, FPV ? -1.15 : -0.05, FPV ? 1.15 : 0.9);
   }
 });
 function endPtr(e) {
@@ -817,6 +834,7 @@ Object.assign(sfx, {
   owl() { tone(380, 0.5, 'sine', 0.1, 320); tone(360, 0.6, 'sine', 0.1, 300, 0.7); }
 });
 function resetWorld() {
+  camPitch = FPV ? 0.05 : 0.26;
   CH.on = false; chaseHud(false);
   TIMERS.length = 0; setB2Lights(false); CORR.mode = 'none'; CORR.pts = null;
   BOUNDS.x0 = -33; BOUNDS.x1 = 33; BOUNDS.z0 = -24.5; BOUNDS.z1 = 24;
@@ -1107,9 +1125,10 @@ function updateB2(dt, t) {
     if (fear > 0.45) k -= (fear - 0.45) * 0.9 * (0.5 + 0.5 * Math.sin(t * 23 + Math.sin(t * 7) * 3));
     if (flickT > 0) { flickT -= dt; k *= (Math.sin(t * 61) > 0.15 ? 1 : 0.04); }
     flash.intensity = flashBase * Math.max(0, k) * (1 - darkK);
-    const dx = -Math.sin(camYaw), dy = -0.11, dz = -Math.cos(camYaw), l = Math.hypot(dx, dy, dz) || 1;
+    const fpx = FPV && !cineOn, cpp = fpx ? Math.cos(camPitch) : 1;
+    const dx = -Math.sin(camYaw) * cpp, dy = fpx ? -Math.sin(camPitch) : -0.11, dz = -Math.cos(camYaw) * cpp, l = Math.hypot(dx, dy, dz) || 1;
     const sy = Math.sin(camYaw), cy = Math.cos(camYaw);
-    const ox = ME.x + cy * 0.32, oy = ME.y + 1.25, oz = ME.z - sy * 0.32;
+    const ox = fpx ? ME.x + cy * 0.22 + dx / l * 0.3 : ME.x + cy * 0.32, oy = fpx ? ME.y + 1.42 + dy / l * 0.3 : ME.y + 1.25, oz = fpx ? ME.z - sy * 0.22 + dz / l * 0.3 : ME.z - sy * 0.32;
     flash.position.set(ox, oy, oz); flash.target.position.set(ox + dx / l * 12, oy + dy / l * 12, oz + dz / l * 12);
   } else flash.intensity = 0;
   // sosok berselendang
@@ -1805,7 +1824,7 @@ function netTick(dt) {
     }
     if (NET.began) {
       NET.snapT -= dt;
-      if (NET.snapT <= 0) { NET.snapT = 0.1; netSend({ t: 's', a: [raka, bayu, mbah].map(a => [r2(a.x), r2(a.z), r2(a.face), a.moving ? 1 : 0, r2(a === ME ? Math.hypot(vel.x, vel.z) : (a.spd || 1.7)), a.g.visible ? 1 : 0]) }); }
+      if (NET.snapT <= 0) { NET.snapT = 0.1; netSend({ t: 's', a: [raka, bayu, mbah].map(a => [r2(a.x), r2(a.z), r2(a.face), a.moving ? 1 : 0, r2(a === ME ? Math.hypot(vel.x, vel.z) : (a.spd || 1.7)), (a.g.visible || a._hidFP) ? 1 : 0]) }); }
     }
     if (NET.peer && NET.now - NET.rxT > 12) { NET.peer = false; dinda.remote = false; dinda.net = null; toast('Temanmu terputus. Dinda kembali dijalankan komputer.', 5000); }
   } else if (NET.role === 'guest') {
@@ -1904,7 +1923,7 @@ function cycleSens() { SENS = SENS < 0.85 ? 1 : (SENS < 1.15 ? 1.5 : 0.6); try {
 let SETBACK = 'title';
 function showSettings(back) {
   if (back) SETBACK = back;
-  showPanel('<div class="board"><h1>Pengaturan</h1><button class="cta alt" data-do="sTxt">Ukuran teks: ' + txtLabel() + '</button><button class="cta alt" data-do="sSens">Sensitivitas kamera: ' + sensLabel() + '</button><button class="cta alt" data-do="sBright">Kecerahan: ' + brightLabel() + '</button><button class="cta alt" data-do="sQual">Kualitas grafis: ' + qualLabel() + '</button><button class="cta" data-do="sBack">Kembali</button></div>');
+  showPanel('<div class="board"><h1>Pengaturan</h1><button class="cta alt" data-do="sCam">Kamera: ' + (FPV ? 'orang pertama (mata)' : 'orang ketiga') + '</button><button class="cta alt" data-do="sTxt">Ukuran teks: ' + txtLabel() + '</button><button class="cta alt" data-do="sSens">Sensitivitas kamera: ' + sensLabel() + '</button><button class="cta alt" data-do="sBright">Kecerahan: ' + brightLabel() + '</button><button class="cta alt" data-do="sQual">Kualitas grafis: ' + qualLabel() + '</button><button class="cta" data-do="sBack">Kembali</button></div>');
 }
 function readSave() { try { const o = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); return (o && o.ch) ? o : null; } catch (e) { return null; } }
 function startBab4() {
@@ -1927,7 +1946,7 @@ function renderTitlePanel() {
 function showMpMenu() { showPanel('<div class="board"><h1>Main berdua</h1><p>Satu pemain membuat ruangan dan membagikan kodenya. Temanmu memasukkan kode itu.</p><button class="cta" data-do="mpHost">Buat ruangan</button><button class="cta alt" data-do="mpJoin">Gabung ruangan</button><button class="cta alt" data-do="menu">Kembali</button></div>'); }
 function showChapters() { showPanel('<div class="board"><h1>Pilih bab</h1><button class="cta alt" data-do="bab2">Bab 2: Jalur yang Berbisik</button><button class="cta alt" data-do="bab3">Bab 3: Yang Keempat</button><button class="cta alt" data-do="menu">Kembali</button></div>'); }
 function showTutorial() {
-  showPanel('<div class="board"><h1>Cara bermain</h1><ul><li><b>Berjalan:</b> tahan dan geser jari di sisi <b>kiri</b> layar.</li><li><b>Memutar kamera:</b> geser jari di sisi <b>kanan</b> layar.</li><li><b>Dialog:</b> ketuk layar untuk lanjut.</li><li><b>Aksi:</b> tekan tombol emas yang muncul di dekat benda atau orang.</li><li><b>Buku catatan 📓:</b> berisi pantangan dan temuanmu.</li><li>Saat dikejar, tahan tombol 🏃 untuk berlari, tapi napasmu terbatas.</li></ul><button class="cta" data-do="tutOk">Mengerti, mulai</button></div>');
+  showPanel('<div class="board"><h1>Cara bermain</h1><ul><li><b>Berjalan:</b> tahan dan geser jari di sisi <b>kiri</b> layar.</li><li><b>Memutar pandangan:</b> geser jari di sisi <b>kanan</b> layar (kamera setinggi mata, seperti game horor pada umumnya).</li><li><b>Dialog:</b> ketuk layar untuk lanjut.</li><li><b>Aksi:</b> tekan tombol emas yang muncul di dekat benda atau orang.</li><li><b>Buku catatan 📓:</b> berisi pantangan dan temuanmu.</li><li>Saat dikejar, tahan tombol 🏃 untuk berlari, tapi napasmu terbatas.</li></ul><button class="cta" data-do="tutOk">Mengerti, mulai</button></div>');
 }
 
 /* =====================  SUARA: MUSIK PROSEDURAL + SAMPEL ASLI (OPSIONAL)  ===================== */
@@ -2029,7 +2048,7 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v18';
+const BUILD = 'v19';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
@@ -2380,6 +2399,7 @@ el.panel.addEventListener('click', e => {
   else if (a === 'chapters') showChapters();
   else if (a === 'settings') showSettings('title');
   else if (a === 'settings2') showSettings('pause');
+  else if (a === 'sCam') { FPV = !FPV; camPitch = FPV ? 0.05 : 0.26; try { localStorage.setItem('sh_fp', FPV ? '1' : '0'); } catch (e) { } showSettings(); }
   else if (a === 'sTxt') { cycleTxt(); showSettings(); }
   else if (a === 'sSens') { cycleSens(); showSettings(); }
   else if (a === 'sBright') { cycleBright(); showSettings(); }
@@ -2507,6 +2527,6 @@ function loop(now) {
     }
   }
 }
-if (window.__DEBUG) window.__dbg = { CH, NET, get STEPN() { return STEPN; }, get ME() { return ME; }, get WAIT() { return WAIT; }, grass, cloudGroup, mountMat, cloudMat, vel, PH, treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
+if (window.__DEBUG) window.__dbg = { keys, CAMS, camera, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, get camPitch() { return camPitch; }, set camPitch(v) { camPitch = v; }, get FPV() { return FPV; }, CH, NET, get STEPN() { return STEPN; }, get ME() { return ME; }, get WAIT() { return WAIT; }, grass, cloudGroup, mountMat, cloudMat, vel, PH, treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
 showTitle();
 requestAnimationFrame(t => { last = t; requestAnimationFrame(loop); });
