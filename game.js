@@ -43,7 +43,7 @@ renderer.toneMappingExposure = 1.0;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x6a4a52, 0.016);
-const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 520);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 700);
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h, false);
@@ -506,7 +506,8 @@ let FPV = true, camFov = 62, bobPh = 0, bobAmp = 0, fpEase = 0;
 try { FPV = localStorage.getItem('sh_fp') !== '0'; } catch (e) { }
 function updateCamera(dt) {
   let dp, dl, rate = 7, fpNow = false;
-  if (cineOn) { dp = cineOn.p; dl = cineOn.l; rate = cineOn.rate; }
+  if (JS.on) { dp = JS.cp; dl = JS.cl; rate = 80; fpNow = true; }
+  else if (cineOn) { dp = cineOn.p; dl = cineOn.l; rate = cineOn.rate; }
   else if (FPV) {                                       // kamera orang pertama: setinggi mata
     fpNow = true;
     const cp = Math.cos(camPitch), sp = Math.sin(camPitch), spd = Math.hypot(vel.x, vel.z);
@@ -524,7 +525,7 @@ function updateCamera(dt) {
   // badan pemain disembunyikan saat kamera orang pertama (dan ditampilkan lagi saat adegan sinematik)
   if (fpNow) { if (ME.g.visible) { ME.g.visible = false; ME._hidFP = true; } }
   else if (ME._hidFP) { ME.g.visible = true; ME._hidFP = false; }
-  const tf = fpNow ? ((CH.on && sprintOn) ? 78 : 70) : 62;
+  const tf = JS.on ? 92 : (fpNow ? ((CH.on && sprintOn) ? 78 : 70) : 62);
   camFov += (tf - camFov) * Math.min(1, dt * 6);
   if (Math.abs(camera.fov - camFov) > 0.02) { camera.fov = camFov; camera.updateProjectionMatrix(); }
   const k = 1 - Math.exp(-dt * rate);
@@ -678,7 +679,7 @@ function stepScript(dt) {
       if (guest && !WAIT.instant) { const d = NET.done[STEPN]; if (d) { LASTCHOICE = d.lc; if (d.S) syncS(d.S); } }
       if (WAIT.done) WAIT.done();
       const inst = !!WAIT.instant; WAIT = null;
-      if (NET.role === 'host' && NET.began && !inst) netSend({ t: 'd', n: STEPN, lc: LASTCHOICE, S: packS() });
+      if (NET.role === 'host' && NET.began && !inst) netDone(STEPN, LASTCHOICE);
     }
     if (!SCRIPT) return;
     let r;
@@ -834,7 +835,7 @@ Object.assign(sfx, {
   owl() { tone(380, 0.5, 'sine', 0.1, 320); tone(360, 0.6, 'sine', 0.1, 300, 0.7); }
 });
 function resetWorld() {
-  camPitch = FPV ? 0.05 : 0.26;
+  camPitch = FPV ? 0.05 : 0.26; setMountZone(false);
   CH.on = false; chaseHud(false);
   TIMERS.length = 0; setB2Lights(false); CORR.mode = 'none'; CORR.pts = null;
   BOUNDS.x0 = -33; BOUNDS.x1 = 33; BOUNDS.z0 = -24.5; BOUNDS.z1 = 24;
@@ -1023,9 +1024,10 @@ const fig = (function () {
   const hair = add(new THREE.CapsuleGeometry(0.2, 1.15, 3, 8), dark, 0, 1.72, 0.1); hair.scale.set(1, 1, 0.55);
   add(new THREE.CapsuleGeometry(0.05, 0.9, 3, 6), dark, -0.27, 1.55, 0.06);
   add(new THREE.CapsuleGeometry(0.05, 0.9, 3, 6), dark, 0.27, 1.55, 0.06);
+  const blocks = g.children.slice();
   const scarf = mkScarf(0.36, 1.8); scarf.position.set(0.2, 1.5, -0.06); scarf.rotation.z = 0.1; g.add(scarf);
   g.scale.setScalar(1.12); g.visible = false; scene.add(g);
-  return { g, scarf };
+  return { g, scarf, blocks };
 })();
 let figOn = false;
 function showFig(x, z) { fig.g.position.set(x, groundY(x, z), z); fig.g.visible = true; figOn = true; }
@@ -1137,6 +1139,8 @@ function updateB2(dt, t) {
     const want = Math.atan2(ME.x - fig.g.position.x, ME.z - fig.g.position.z);
     fig.g.rotation.y += angDiff(want - fig.g.rotation.y) * Math.min(1, dt * 2);
     spirit.position.set(fig.g.position.x, fig.g.position.y + 1.6, fig.g.position.z); spirit.intensity = 14 + Math.sin(t * 9) * 2;
+  } else if (pocong.on) {
+    spirit.position.set(pocong.g.position.x, pocong.g.position.y + 1.5, pocong.g.position.z); spirit.intensity = 13 + Math.sin(t * 9) * 2;
   } else if (wispS.on) {
     const dx = wispS.tx - wispS.x, dz = wispS.tz - wispS.z, d = Math.hypot(dx, dz);
     if (d > 0.05) { const st = Math.min(d, 4.2 * dt); wispS.x += dx / d * st; wispS.z += dz / d * st; }
@@ -1368,8 +1372,9 @@ function* bab2() {
   yield { init() { wispS.tx = SIDE[1][0]; wispS.tz = SIDE[1][1]; }, test: () => true };
   yield GOTO(SIDE0.x, SIDE0.z, 3.2, true);
   yield DO(() => { sfx.whisper(); toast('“Ka... sini...”', 2600); addFear(0.1); bayu.follow = false; bayu.tx = null; });
-  yield SAY('Narator', 'Cahaya hijau itu bergerak menjauh. Dari belakangmu, sesuatu berlari mendekat di antara pepohonan.');
-  yield CHASE([[SIDE0.x, SIDE0.z]].concat(SIDE), { gap: 8, speed: 4.9 });
+  yield SAY('Narator', 'Cahaya hijau itu bergerak menjauh. Dari belakangmu terdengar bunyi berdebum pelan, berulang: sesuatu terbungkus kain putih melompat-lompat mendekat di antara pepohonan.');
+  yield FADE(true, 0.3);
+  yield CHASE([[SIDE0.x, SIDE0.z]].concat(SIDE), { ghost: 'pocong', gap: 8, speed: 4.9 });
   yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); wispS.tx = SIDE[SIDE.length - 1][0] - 4; wispS.tz = SIDE[SIDE.length - 1][1] - 4; });
   yield SAY('Narator', 'Cahaya hijau itu melayang naik, lalu padam di sela kabut. Jalan setapak berakhir di dinding pandan yang rapat.');
   yield* blink(() => { enterClearing(); });
@@ -1422,6 +1427,7 @@ function* bab2() {
   yield* bab3();
 }
 function enterClearing() {
+  setMountZone(true);
   clearing.visible = true; CORR.mode = 'none'; wispS.on = false; wisp.visible = false; dLamp.visible = false; hideFig(); ambientOn = false;
   BOUNDS.x0 = CL.x - 20; BOUNDS.x1 = CL.x + 20; BOUNDS.z0 = CL.z - 13; BOUNDS.z1 = CL.z + 24;
   setMood('petil'); fearBase = 0.25;
@@ -1528,7 +1534,14 @@ function* bab3() {
     yield* stopAlone();
     yield T(0.5);
     if (i === 1) { yield* scareGuard('(dari belakang, sangat dekat) ...jangan berhenti... aku di sini...', 7); yield SAY('Raka', '(Jangan panik. Nyalakan sisanya.)'); }
-    if (i === 3) { yield* scareGuard('(berbisik di telinga kirimu) ...Raka... kau dengar aku, kan...', 8); yield SAY('Narator', 'Api keempat berkobar. Bayangan di pepohonan mundur selangkah.'); }
+    if (i === 3) {
+      yield DO(() => { sfx.stepsBehind(8, 0.8); addFear(0.15); flicker(1.0); sfx.whisper(); });
+      yield SAY('Suara', '(menjerit lirih dari kegelapan) ...Raka... jangan nyalakan yang lain...');
+      yield SAY('Bayu', 'Dia marah! Lari ke gerbang, Ka! Dia tidak bisa melewati gerbang itu!');
+      yield FADE(true, 0.3);
+      yield CHASE([[CL.x - 8.5, CL.z - 2.5], [CL.x - 8.0, CL.z + 4.0], [CL.x - 3.0, CL.z + 7.5], [CL.x, CL.z + 12.5]], { ghost: 'laras', gap: 8, speed: 4.8, endR: 3.0 });
+      yield SAY('Narator', 'Di bawah gerbang, sosok itu terhenti seolah menabrak dinding yang tak terlihat, lalu larut kembali ke dalam gelap.');
+    }
   }
   // ---------------- Laras terlihat ----------------
   yield DO(() => { R3.laras = true; showFig(ALT.x + 0.5, ALT.z - 4.2); spiritFixed = 0; fearBase = 0.12; sfx.chime(); cineTo(ALT.x + 0.5, 2.0, ALT.z + 3.6, ALT.x + 0.5, 1.7, ALT.z - 4.2, 1.6); });
@@ -1600,7 +1613,8 @@ function* bab3() {
   } else {
     yield SAY('Narator', 'Wajah gadis itu berubah. Kelelahan di matanya menjadi sesuatu yang dingin dan sangat lapar.');
     yield SAY('Laras', 'Sama saja seperti mereka. Semua orang menoleh hanya untuk menyuruhku pergi.');
-    yield DO(() => { sfx.sting(); flicker(2.4); addFear(0.4); G_shake(1); clFlames.forEach(f => { f.k = 0; }); lampB.base = 0; });
+    yield DO(() => { clFlames.forEach(f => { f.k = 0; }); lampB.base = 0; addFear(0.4); if (startJumpscare(GH.laras)) later(1.9, endJumpscare); else { sfx.sting(); flicker(2.4); G_shake(1); } });
+    yield T(2.0);
     yield SAY('Laras', 'Kalau begitu... aku ikut turun bersamamu.');
   }
   if (R3.end === 'C') yield DIM(1, 0.7); else yield WHITEHOLD(1.0);
@@ -1686,6 +1700,8 @@ function showCredits() {
     '<li>Tokoh pria: paket Animated Men oleh Quaternius (CC0).</li>' +
     '<li>Tokoh perempuan: \"human npc\" oleh opavikE3530H (Sketchfab).</li>' +
     '<li>Pohon: \"Tree Animate\" oleh RandyGF (Sketchfab), lisensi CC BY 4.0. Dimodifikasi: dipisah, dikecilkan, dan diberi tingkat detail.</li>' +
+    '<li>Hantu pocong: \"Pocong (Scary)\" oleh fdhlan21 (Sketchfab), lisensi CC BY 4.0.</li>' +
+    '<li>Hantu perempuan: \"Slendrina/Ghost Girl (1)\" oleh Yandu27 (Sketchfab), lisensi CC BY 4.0. Dimodifikasi: diputar dan diperkecil ukuran teksturnya.</li>' +
     '<li>Gerbang: \"Torii Gate - 3D Model\" oleh Scarit (Sketchfab).</li>' +
     '<li>Gunung: \"Paramount Mountain 2012\" oleh Victor Hugo Ochoa (Sketchfab).</li>' +
     '<li>Rumput: \"realistics grass 10\" oleh POLYSCAN (Sketchfab).</li>' +
@@ -1702,15 +1718,19 @@ function startBab3() {
 /* =====================  MULTIPLAYER ONLINE (BETA)  ===================== */
 // Dua pemain: HOST memegang Raka dan menjalankan cerita; TAMU memegang Dinda dan menjalankan salinan cerita yang sama,
 // selesai tiap langkahnya diputuskan host. Lewat broker MQTT publik (WebSocket TLS), tanpa akun. Untuk uji coba saja.
-const MP_BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+// Huruf terakhir kode ruangan menunjukkan server yang dipakai (A, B, C sesuai urutan di bawah).
+const MP_BROKERS = ['wss://mqtt.eclipseprojects.io:443/mqtt', 'wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
 const MP_ROOT = 'selendanghijau-7q2/v1/';
-const NET = { role: 'solo', code: '', ws: null, ready: false, peer: false, began: false, buf: new Uint8Array(0), pub: '', sub: '', now: 0, rxT: 0, pingT: 0, snapT: 0, posT: 0, helloT: 0, done: {}, guestReady: false, startCh: 0, startTry: 0, startT: 0, msg: '' };
+const NET = { role: 'solo', code: '', idx: 0, ws: null, ready: false, peer: false, began: false, buf: new Uint8Array(0), pub: '', sub: '', lastT: 0, rxT: 0, pongT: 0, chkT: 0, pingT: 0, snapT: 0, posT: 0, helloT: 0, needT: 2, joinT: 0, done: {}, doneLog: {}, guestReady: false, startCh: 0, startTry: 0, startT: 0, msg: '', recon: false, reconBusy: false, reconAt: 0, reconTries: 0, lostAt: 0, warned: false, verWarn: '' };
 let ME = raka;
 let STEPN = 0;
+let joinCode = '';
+const nowS = () => performance.now() / 1000;
 const mEnc = new TextEncoder(), mDec = new TextDecoder();
 function mStr(s) { const b = mEnc.encode(s); return [b.length >> 8, b.length & 255, ...b]; }
 function mLen(n) { const o = []; do { let d = n % 128; n = Math.floor(n / 128); if (n > 0) d |= 128; o.push(d); } while (n > 0); return o; }
 function mPkt(b0, body) { return new Uint8Array([b0, ...mLen(body.length), ...body]); }
+function mConnectPkt() { return mPkt(0x10, [0, 4, 77, 81, 84, 84, 4, 2, 0, 60, ...mStr('sh' + Math.random().toString(16).slice(2, 10))]); }
 function mParse(cb) {
   for (;;) {
     const b = NET.buf; if (b.length < 2) return;
@@ -1728,21 +1748,22 @@ function mqttConnect(idx, subTopic, onReady, onFail) {
   let ws; try { ws = new WebSocket(MP_BROKERS[idx], 'mqtt'); } catch (e) { onFail('WebSocket tidak tersedia di perangkat ini'); return; }
   ws.binaryType = 'arraybuffer'; NET.ws = ws; NET.buf = new Uint8Array(0); NET.ready = false;
   let settled = false;
-  const fail = m => { if (settled) return; settled = true; clearTimeout(to); try { ws.close(); } catch (e) { } onFail(m); };
+  const fail = m => { if (settled) return; settled = true; clearTimeout(to); if (NET.ws === ws) NET.ws = null; try { ws.onclose = null; ws.onerror = null; ws.close(); } catch (e) { } onFail(m); };
   const to = setTimeout(() => fail('koneksi ke server kehabisan waktu'), 7000);
-  ws.onopen = () => ws.send(mPkt(0x10, [0, 4, 77, 81, 84, 84, 4, 2, 0, 60, ...mStr('sh' + Math.random().toString(16).slice(2, 10))]));
+  ws.onopen = () => ws.send(mConnectPkt());
   ws.onerror = () => fail('tidak bisa tersambung ke server');
-  ws.onclose = () => { if (!settled) fail('koneksi ditutup server'); else if (NET.ws === ws) netLost('koneksi terputus'); };
+  ws.onclose = () => { if (!settled) fail('koneksi ditutup server'); else if (NET.ws === ws) netDropped('koneksi terputus'); };
   ws.onmessage = ev => {
     const a = new Uint8Array(ev.data), c = new Uint8Array(NET.buf.length + a.length); c.set(NET.buf); c.set(a, NET.buf.length); NET.buf = c;
     mParse((b0, body) => {
       const type = b0 >> 4;
       if (type === 2) { if (body[1] === 0) ws.send(mPkt(0x82, [0, 1, ...mStr(subTopic), 0])); else fail('ditolak server'); }
-      else if (type === 9) { if (!settled) { settled = true; clearTimeout(to); NET.ready = true; NET.rxT = NET.now; onReady(); } }
+      else if (type === 9) { if (body[2] === 0x80) fail('langganan ditolak server'); else if (!settled) { settled = true; clearTimeout(to); NET.ready = true; NET.rxT = nowS(); NET.pongT = nowS(); onReady(); } }
+      else if (type === 13) { NET.pongT = nowS(); }
       else if (type === 3) {
         const tl = (body[0] << 8) | body[1]; let p = 2 + tl; if (((b0 >> 1) & 3) > 0) p += 2;
         let o = null; try { o = JSON.parse(mDec.decode(body.slice(p))); } catch (e) { }
-        if (o && o.v === 1) { NET.rxT = NET.now; netOn(o); }
+        if (o && o.v === 1) { NET.rxT = nowS(); netOn(o); }
       }
     });
   };
@@ -1750,43 +1771,119 @@ function mqttConnect(idx, subTopic, onReady, onFail) {
 function netClose() {
   const w = NET.ws; NET.ws = null; NET.ready = false;
   if (w) { try { w.onclose = null; w.onerror = null; w.close(); } catch (e) { } }
-  NET.role = 'solo'; NET.peer = false; NET.began = false; NET.done = {}; NET.guestReady = false; NET.startCh = 0; STEPN = 0;
+  NET.role = 'solo'; NET.peer = false; NET.began = false; NET.done = {}; NET.doneLog = {}; NET.guestReady = false; NET.startCh = 0; NET.recon = false; NET.reconBusy = false; NET.warned = false; NET.verWarn = ''; STEPN = 0;
   ME = raka; [raka, dinda, bayu, mbah].forEach(a => { a.remote = false; a.net = null; });
 }
 function netLost(why) {
   const wasPlaying = NET.began, role = NET.role; netClose();
   if (wasPlaying || role !== 'solo') { showTitle(); toast('Multiplayer terputus: ' + why, 6000); }
 }
+function netDropped(why) {           // sambungan putus di tengah jalan: coba sambung ulang ke ruangan yang sama
+  NET.ready = false; NET.ws = null;
+  if (NET.role === 'solo') return;
+  NET.recon = true; NET.reconAt = nowS() + 0.4; NET.reconTries = 0; NET.lostAt = nowS();
+  mpStatus('Sambungan terputus. Mencoba menyambung ulang...');
+  if (NET.began) toast('Sambungan terputus. Menyambung ulang...', 3000);
+}
+function netPump() {                 // dipanggil tiap detik (juga saat layar tidak digambar) dan saat aplikasi kembali dibuka
+  const t = nowS();
+  if (NET.role === 'solo') return;
+  if (NET.recon && !NET.reconBusy && t >= NET.reconAt) {
+    NET.reconBusy = true;
+    mqttConnect(NET.idx, NET.sub, () => {
+      NET.recon = false; NET.reconBusy = false; NET.rxT = nowS(); mpStatus('Tersambung kembali.');
+      if (NET.role === 'guest') netSend({ t: 'hello', b: BUILD });
+      if (NET.role === 'host' && !NET.began) renderHostLobby();
+    }, m => {
+      NET.reconBusy = false; NET.reconTries++; NET.reconAt = nowS() + Math.min(6, 1 + NET.reconTries);
+      if (nowS() - NET.lostAt > 90) netLost('tidak bisa tersambung ulang (' + m + ')');
+    });
+  }
+  if (NET.ready && NET.ws && NET.ws.readyState === 1) {
+    if (t - NET.pingT > 20) { NET.pingT = t; try { NET.ws.send(new Uint8Array([0xC0, 0])); } catch (e) { } }
+    if (NET.chkT && t > NET.chkT) {   // cek "masih hidup?" setelah aplikasi kembali dibuka
+      const dead = NET.pongT < NET.chkT - 4; NET.chkT = 0;
+      if (dead) { const w = NET.ws; NET.ws = null; NET.ready = false; try { w.onclose = null; w.onerror = null; w.close(); } catch (e) { } netDropped('koneksi tidak merespons'); }
+    }
+  }
+}
+function netWake() {                 // aplikasi dibuka kembali
+  if (NET.role === 'solo') return;
+  if (NET.recon) { NET.reconAt = 0; netPump(); return; }
+  if (NET.ready && NET.ws && NET.ws.readyState === 1) { try { NET.ws.send(new Uint8Array([0xC0, 0])); NET.chkT = nowS() + 4; } catch (e) { } }
+  else netDropped('koneksi terputus');
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) netWake(); });
+const pumpLoop = () => { netPump(); setTimeout(pumpLoop, 1000); }; pumpLoop();
+
 const CODE_ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function rndCode() { let s = ''; for (let i = 0; i < 4; i++) s += CODE_ALPHA[Math.floor(Math.random() * CODE_ALPHA.length)]; return s; }
+function mpHostName(idx) { return (MP_BROKERS[idx] || '').replace(/^wss?:\/\//, '').replace(/\/.*$/, ''); }
 function mpStatus(t) { NET.msg = t; const e = $('#mpStatus'); if (e) e.textContent = t; }
+function mpFootnote() { return '<p style="font-size:12px;opacity:.7;margin:6px 0 0">Versi game: ' + BUILD + ' &middot; Server: ' + mpHostName(NET.idx) + '</p>'; }
 function mpHost() {
-  netClose(); showPanel('<div class="board"><h1>Main berdua</h1><p id="mpStatus">Membuat ruangan...</p></div>');
-  const tryIdx = idx => {
-    if (idx >= MP_BROKERS.length) { showPanel('<div class="board"><h1>Gagal</h1><p>Tidak bisa tersambung ke server. Periksa internet, lalu coba lagi.</p><button class="cta" data-do="mpHost">Coba lagi</button><button class="cta alt" data-do="menu">Kembali</button></div>'); return; }
+  netClose(); NET.msg = ''; showPanel('<div class="board"><h1>Main berdua</h1><p id="mpStatus">Membuat ruangan...</p></div>');
+  const tryIdx = (idx, errs) => {
+    if (idx >= MP_BROKERS.length) {
+      showPanel('<div class="board"><h1>Gagal tersambung</h1><p>Tidak satu pun server bisa dihubungi:</p><p style="font-size:13px;opacity:.85">' + errs.join('<br>') + '</p><p style="font-size:13px">Periksa internet, coba ganti Wi-Fi atau data seluler, atau tekan Tes koneksi.</p><button class="cta" data-do="mpHost">Coba lagi</button><button class="cta alt" data-do="mpDiag">Tes koneksi</button><button class="cta alt" data-do="menu">Kembali</button></div>'); return;
+    }
     const code = rndCode() + String.fromCharCode(65 + idx);
-    NET.code = code; NET.pub = MP_ROOT + code + '/h'; NET.sub = MP_ROOT + code + '/g';
-    mqttConnect(idx, NET.sub, () => { NET.role = 'host'; NET.peer = false; renderHostLobby(); }, () => tryIdx(idx + 1));
+    NET.code = code; NET.idx = idx; NET.pub = MP_ROOT + code + '/h'; NET.sub = MP_ROOT + code + '/g';
+    mpStatus('Menyambung ke ' + mpHostName(idx) + '...');
+    mqttConnect(idx, NET.sub, () => { NET.role = 'host'; NET.peer = false; NET.msg = 'Menunggu teman bergabung...'; renderHostLobby(); }, m => tryIdx(idx + 1, errs.concat([mpHostName(idx) + ': ' + m])));
   };
-  tryIdx(0);
+  tryIdx(0, []);
 }
 function renderHostLobby() {
-  if (NET.began) return;
+  if (NET.began || NET.role !== 'host') return;
   const btn = NET.peer ? '<button class="cta" data-do="mpStart1">Mulai dari Bab 1</button><button class="cta alt" data-do="mpStart2">Mulai dari Bab 2</button><button class="cta alt" data-do="mpStart3">Mulai dari Bab 3</button>' : '';
-  showPanel('<div class="board"><h1>Ruangan</h1><p>Berikan kode ini ke temanmu:</p><div style="font:800 40px monospace;letter-spacing:.25em;text-align:center;color:#f2b84b;margin:8px 0">' + NET.code + '</div><p id="mpStatus">' + (NET.startCh ? 'Menyiapkan permainan...' : (NET.peer ? 'Teman sudah terhubung! Kamu jadi Raka, temanmu jadi Dinda.' : 'Menunggu teman bergabung...')) + '</p>' + btn + '<button class="cta alt" data-do="mpCancel">Batal</button></div>');
+  const st = NET.startCh ? 'Menyiapkan permainan...' : (NET.verWarn || (NET.peer ? 'Teman sudah terhubung! Kamu jadi Raka, temanmu jadi Dinda.' : (NET.msg || 'Menunggu teman bergabung...')));
+  showPanel('<div class="board"><h1>Ruangan</h1><p>Berikan kode ini ke temanmu:</p><div style="font:800 40px monospace;letter-spacing:.25em;text-align:center;color:#f2b84b;margin:8px 0">' + NET.code + '</div><button class="cta alt" data-do="mpCopy">Salin kode</button><button class="cta alt" data-do="mpShare">Bagikan lewat aplikasi lain</button><p id="mpStatus">' + st + '</p>' + btn + '<button class="cta alt" data-do="mpCancel">Batal</button>' + mpFootnote() + '</div>');
 }
+function mpCopyText(txt) {
+  let ok = false;
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt); ok = true; } } catch (e) { }
+  if (!ok) { try { const ta = document.createElement('textarea'); ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); document.body.removeChild(ta); } catch (e) { } }
+  toast(ok ? 'Tersalin: ' + txt : 'Tidak bisa menyalin. Catat kodenya: ' + txt, 3500);
+}
+function mpShare() {
+  const txt = 'Main Selendang Hijau bareng aku! Kode ruangan: ' + NET.code + ' (versi game ' + BUILD + ')';
+  try { if (navigator.share) { navigator.share({ text: txt }).catch(() => { }); return; } } catch (e) { }
+  mpCopyText(txt);
+}
+const KEYPAD = CODE_ALPHA.split('');
 function showJoinForm(msg) {
-  showPanel('<div class="board"><h1>Gabung ruangan</h1><p>Masukkan kode dari temanmu:</p><input id="joinCode" maxlength="5" autocomplete="off" autocapitalize="characters" placeholder="KODE"><p id="mpStatus">' + (msg || '') + '</p><button class="cta" data-do="mpGo">Gabung</button><button class="cta alt" data-do="menu">Kembali</button></div>');
+  const keys = KEYPAD.map(k => '<button data-do="mpK_' + k + '" style="padding:9px 0;border-radius:8px;border:1px solid rgba(230,234,219,.35);background:rgba(20,28,24,.9);color:#fff;font:700 16px monospace">' + k + '</button>').join('');
+  showPanel('<div class="board"><h1 style="margin:0 0 6px">Gabung ruangan</h1><div style="display:flex;gap:6px;align-items:stretch;margin-bottom:8px"><div id="codeView" style="flex:1;border:2px solid rgba(230,234,219,.5);border-radius:10px;font:800 26px monospace;letter-spacing:.3em;text-align:center;padding:6px 0;color:#f2b84b;min-height:34px">' + joinCode + '</div><button data-do="mpBk" style="width:52px;border-radius:10px;border:1px solid rgba(230,234,219,.35);background:rgba(20,28,24,.9);color:#fff;font-size:20px">&#9003;</button><button class="cta" data-do="mpGo" style="margin:0;width:auto;padding:0 16px">Gabung</button></div><div style="display:grid;grid-template-columns:repeat(8,1fr);gap:4px">' + keys + '</div><p id="mpStatus" style="margin:8px 0 4px">' + (msg || 'Ketuk huruf kode dari temanmu (5 karakter).') + '</p><button class="cta alt" data-do="menu" style="margin:4px 0 0">Kembali</button></div>');
 }
+function mpKey(k) { if (joinCode.length < 5) joinCode += k; const e = $('#codeView'); if (e) e.textContent = joinCode; }
+function mpBack() { joinCode = joinCode.slice(0, -1); const e = $('#codeView'); if (e) e.textContent = joinCode; }
 function mpJoin(raw) {
   const code = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), idx = code.charCodeAt(4) - 65;
-  if (code.length !== 5 || !(idx >= 0 && idx < MP_BROKERS.length)) { showJoinForm('Kode tidak valid.'); return; }
-  netClose(); mpStatus('Menyambung...');
-  NET.code = code; NET.pub = MP_ROOT + code + '/g'; NET.sub = MP_ROOT + code + '/h';
-  mqttConnect(idx, NET.sub, () => { NET.role = 'guest'; NET.helloT = 0; showPanel('<div class="board"><h1>Ruangan ' + code + '</h1><p id="mpStatus">Tersambung. Menunggu host...</p><button class="cta alt" data-do="mpCancel">Keluar</button></div>'); }, m => showJoinForm('Gagal: ' + m + '.'));
+  if (code.length !== 5 || !(idx >= 0 && idx < MP_BROKERS.length)) { showJoinForm('Kode tidak valid. Periksa lagi (5 karakter).'); return; }
+  netClose(); mpStatus('Menyambung ke ' + mpHostName(idx) + '...');
+  NET.code = code; NET.idx = idx; NET.pub = MP_ROOT + code + '/g'; NET.sub = MP_ROOT + code + '/h';
+  mqttConnect(idx, NET.sub, () => {
+    NET.role = 'guest'; NET.helloT = 0; NET.joinT = nowS();
+    showPanel('<div class="board"><h1>Ruangan ' + code + '</h1><p id="mpStatus">Tersambung ke server. Menyapa host...</p><button class="cta alt" data-do="mpCancel">Keluar</button>' + mpFootnote() + '</div>');
+  }, m => showJoinForm('Gagal: ' + m + '. Server: ' + mpHostName(idx) + '. Minta host membuat ruangan lagi, atau coba jaringan lain.'));
+}
+function mpDiag() {
+  const lines = MP_BROKERS.map((b, i) => mpHostName(i) + ': menguji...');
+  const draw = () => showPanel('<div class="board"><h1>Tes koneksi</h1><p style="font-size:14px;line-height:1.6">' + lines.join('<br>') + '</p><p style="font-size:12px;opacity:.7">Versi game: ' + BUILD + '</p><button class="cta" data-do="mpHost">Coba buat ruangan lagi</button><button class="cta alt" data-do="menu">Kembali</button></div>');
+  draw();
+  const probe = (i, cb) => {
+    const t0 = performance.now(); let done = false, ws;
+    const fin = (ok, m) => { if (done) return; done = true; clearTimeout(to); try { ws.onclose = null; ws.onerror = null; ws.close(); } catch (e) { } cb(ok, m); };
+    const to = setTimeout(() => fin(false, 'kehabisan waktu'), 6000);
+    try { ws = new WebSocket(MP_BROKERS[i], 'mqtt'); } catch (e) { fin(false, 'WebSocket tidak tersedia'); return; }
+    ws.binaryType = 'arraybuffer'; ws.onopen = () => ws.send(mConnectPkt()); ws.onerror = () => fin(false, 'tidak bisa tersambung'); ws.onclose = () => fin(false, 'ditutup server');
+    ws.onmessage = ev => { const a = new Uint8Array(ev.data); if ((a[0] >> 4) === 2) fin(a[3] === 0, a[3] === 0 ? Math.round(performance.now() - t0) + ' ms' : 'ditolak server'); };
+  };
+  let i = 0; const next = () => { if (i >= MP_BROKERS.length) return; const k = i++; probe(k, (ok, m) => { lines[k] = (ok ? '&#10003; ' : '&#10007; ') + mpHostName(k) + ': ' + (ok ? 'bisa dihubungi (' + m + ')' : m); draw(); next(); }); }; next();
 }
 function mpBegin(role, ch) {
-  if (NET.began) return; NET.began = true; NET.done = {}; STEPN = 0; NET.startCh = 0;
+  if (NET.began) return; NET.began = true; NET.done = {}; NET.doneLog = {}; STEPN = 0; NET.startCh = 0;
   NET.role = role; hidePanel();
   const guest = role === 'guest';
   raka.remote = guest; bayu.remote = guest; mbah.remote = guest; dinda.remote = !guest; ME = guest ? dinda : raka;
@@ -1794,16 +1891,23 @@ function mpBegin(role, ch) {
 }
 function packS() { return { f: S.flags, i: S.items, n: S.notes, d: S.finds }; }
 function syncS(o) { S.flags = o.f || {}; S.items = o.i || []; S.notes = o.n || []; S.finds = o.d || []; }
+function netDone(n, lc) {            // host: umumkan langkah n selesai (dan simpan agar bisa dikirim ulang bila tamu meminta)
+  const msg = { t: 'd', n, lc, S: packS() }; NET.doneLog[n] = msg; delete NET.doneLog[n - 40]; netSend(msg);
+}
 const r2 = v => Math.round(v * 100) / 100;
 function netOn(o) {
   const t = o.t;
   if (NET.role === 'host') {
-    if (t === 'hello') { if (o.b !== BUILD) { netSend({ t: 'x', b: BUILD }); toast('Versi game temanmu berbeda (' + o.b + '). Samakan dulu versinya.', 6000); return; } if (!NET.peer) { NET.peer = true; if (!NET.began && !NET.startCh) renderHostLobby(); } netSend({ t: 'w' }); }
-    else if (t === 'p') { dinda.net = { x: o.x, z: o.z, f: o.f, m: o.m, s: o.s }; }
+    if (t === 'hello') {
+      if (o.b !== BUILD) { NET.verWarn = 'Temanmu memakai versi game ' + o.b + ', kamu ' + BUILD + '. Samakan dulu versinya.'; netSend({ t: 'x', b: BUILD }); if (!NET.began) renderHostLobby(); toast(NET.verWarn, 6000); return; }
+      NET.verWarn = ''; const first = !NET.peer; NET.peer = true; if (first && !NET.began && !NET.startCh) renderHostLobby(); netSend({ t: 'w' });
+    }
+    else if (t === 'p') { dinda.net = { x: o.x, z: o.z, f: o.f, m: o.m, s: o.s }; if (NET.began && !dinda.remote) { dinda.remote = true; toast('Temanmu kembali.', 2500); } }
     else if (t === 'k') { if (DLG.on && DLG.finished) DLG.tapped = true; }
     else if (t === 'c') { if (el.choices.classList.contains('on') && LASTCHOICE < 0) LASTCHOICE = o.i; }
     else if (t === 'a') { if (goal && goal.label && !goal.done && state === 'play') { goal.done = true; sfx.note(); } }
     else if (t === 'r') { NET.guestReady = true; }
+    else if (t === 'need') { for (let k = o.n; k <= o.n + 12; k++) if (NET.doneLog[k]) netSend(NET.doneLog[k]); }
   } else if (NET.role === 'guest') {
     if (t === 'x') { netClose(); showJoinForm('Versi game berbeda: host memakai ' + o.b + ', kamu memakai ' + BUILD + '. Perbarui dulu.'); return; }
     if (t === 'w') { NET.peer = true; }
@@ -1813,32 +1917,34 @@ function netOn(o) {
   }
 }
 function netTick(dt) {
-  NET.now += dt;
-  if (!NET.ws || !NET.ready) return;
-  if (NET.now - NET.pingT > 25) { NET.pingT = NET.now; try { NET.ws.send(new Uint8Array([0xC0, 0])); } catch (e) { } }
+  const t = nowS(), rdt = Math.min(0.5, Math.max(0, t - (NET.lastT || t))); NET.lastT = t;   // waktu nyata, bukan waktu game (agar tetap 10x/detik walau game lambat)
+  if (NET.role === 'solo' || !NET.ready) return;
   if (NET.role === 'host') {
     if (NET.startCh && !NET.began) {
-      NET.startT -= dt;
+      NET.startT -= rdt;
       if (NET.startT <= 0) { NET.startT = 0.5; NET.startTry++; netSend({ t: 'start', ch: NET.startCh }); }
       if (NET.guestReady || NET.startTry > 12) mpBegin('host', NET.startCh);
     }
     if (NET.began) {
-      NET.snapT -= dt;
+      NET.snapT -= rdt;
       if (NET.snapT <= 0) { NET.snapT = 0.1; netSend({ t: 's', a: [raka, bayu, mbah].map(a => [r2(a.x), r2(a.z), r2(a.face), a.moving ? 1 : 0, r2(a === ME ? Math.hypot(vel.x, vel.z) : (a.spd || 1.7)), (a.g.visible || a._hidFP) ? 1 : 0]) }); }
+      if (dinda.remote && t - NET.rxT > 8) { dinda.remote = false; dinda.net = null; toast('Temanmu tidak terdengar. Dinda dijalankan komputer sementara.', 4000); }
     }
-    if (NET.peer && NET.now - NET.rxT > 12) { NET.peer = false; dinda.remote = false; dinda.net = null; toast('Temanmu terputus. Dinda kembali dijalankan komputer.', 5000); }
   } else if (NET.role === 'guest') {
-    if (!NET.began) { NET.helloT -= dt; if (NET.helloT <= 0) { NET.helloT = 1; netSend({ t: 'hello', b: BUILD }); } }
-    else {
-      NET.posT -= dt;
+    if (!NET.began) {
+      NET.helloT -= rdt; if (NET.helloT <= 0) { NET.helloT = 1; netSend({ t: 'hello', b: BUILD }); }
+      if (!NET.peer && t - NET.joinT > 8) mpStatus('Belum ada balasan dari host (' + Math.round(t - NET.joinT) + ' dtk). Pastikan host sudah membuat ruangan, kodenya sama, dan versi game sama (' + BUILD + ').');
+    } else {
+      NET.posT -= rdt;
       if (NET.posT <= 0) { NET.posT = 0.1; netSend({ t: 'p', x: r2(ME.x), z: r2(ME.z), f: r2(ME.face), m: ME.moving ? 1 : 0, s: r2(Math.hypot(vel.x, vel.z)) }); }
+      if (WAIT && !WAIT.instant && NET.done[STEPN] === undefined) { NET.needT -= rdt; if (NET.needT <= 0) { NET.needT = 2; netSend({ t: 'need', n: STEPN }); } } else NET.needT = 2;
     }
-    if (NET.now - NET.rxT > 12) netLost('host tidak merespons');
+    const silent = t - NET.rxT;
+    if (silent > 8 && !NET.warned) { NET.warned = true; toast('Menunggu host...', 3000); } else if (silent < 2) NET.warned = false;
+    if (silent > 90) netLost('host tidak merespons');
   }
 }
-const mpStyle = document.createElement('style');
-mpStyle.textContent = '.board input{width:100%;padding:12px;border-radius:10px;border:2px solid rgba(230,234,219,.5);background:#0b1210;color:#fff;font:800 26px monospace;letter-spacing:.3em;text-transform:uppercase;text-align:center;-webkit-user-select:text;user-select:text;touch-action:auto;margin:6px 0}';
-if (document.head) document.head.appendChild(mpStyle);
+
 
 /* =====================  KEJAR-KEJARAN: LARI (SPRINT) + STAMINA  ===================== */
 const CH = { on: false, tries: 0, gap: 99 };
@@ -1854,7 +1960,8 @@ if (document.body) document.body.appendChild(sprintWrap);
 }
 function chaseHud(on) { sprintWrap.style.display = on ? 'block' : 'none'; if (!on) { sprintOn = false; stamina = 1; exhausted = false; stumbleT = 0; } }
 function CHASE(pts, opt) {
-  const o = Object.assign({ gap: 9, speed: 4.6, endR: 3.2, maxTries: 6 }, opt || {});
+  const o = Object.assign({ gap: 9, speed: 4.6, endR: 3.2, maxTries: 6, ghost: 'laras' }, opt || {});
+  const gg = () => GH[o.ghost] || GH.laras;
   const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
   const L = cum[cum.length - 1];
   const d0x = (pts[1][0] - pts[0][0]) / (cum[1] || 1), d0z = (pts[1][1] - pts[0][1]) / (cum[1] || 1);
@@ -1872,7 +1979,7 @@ function CHASE(pts, opt) {
     s = Math.min(s, L); let i = 0; while (i < cum.length - 2 && s > cum[i + 1]) i++;
     const t = (s - cum[i]) / ((cum[i + 1] - cum[i]) || 1); return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t];
   };
-  let se = 0, tries = 0, stT = 0, hit = false;
+  let se = 0, tries = 0, stT = 0, hit = false, hopPh = 0, lastSin = 0;
   const resetRun = () => {
     const p0 = pts[0]; ME.x = p0[0]; ME.z = p0[1]; ME.y = groundY(p0[0], p0[1]); vel.x = vel.z = 0; stamina = 1; exhausted = false; sprintOn = false; stumbleT = 0;
     se = -o.gap - tries * 2.5; hit = false; ctrl = 'walk';
@@ -1881,7 +1988,8 @@ function CHASE(pts, opt) {
     init() {
       CH.on = true; CH.tries = 0; chaseHud(true); followCam(); tries = 0;
       setObj('LARI! Jangan berhenti. Tahan tombol 🏃 untuk berlari (napasmu terbatas).');
-      resetRun(); const p = at(se); showFig(p[0], p[1]); sfx.sting(); flicker(0.8);
+      el.fade.style.transition = 'opacity 0.5s'; el.fade.style.opacity = '0';
+      resetRun(); const p = at(se); gg().show(p[0], p[1]); sfx.sting(); flicker(0.8);
     },
     test(dt) {
       if (hit) return false;
@@ -1890,9 +1998,15 @@ function CHASE(pts, opt) {
       if (sp >= L - o.endR) return true;
       const moving = Math.hypot(vel.x, vel.z) > 0.6;
       if (lookingBack() && moving) stumbleT = Math.max(stumbleT, 0.35);          // menoleh saat lari = tersandung
-      const spdE = o.speed * (tries >= 3 ? 0.9 : 1) * (tries >= 5 ? 0.85 : 1);
+      const G = gg(); let spdE = o.speed * (tries >= 3 ? 0.9 : 1) * (tries >= 5 ? 0.85 : 1);
+      if (G.hop) { hopPh += dt * 4.6; spdE *= 0.35 + 0.95 * Math.pow(Math.abs(Math.sin(hopPh)), 0.7); }        // pocong melompat: cepat saat melayang, diam saat mendarat
       se = Math.min(se + spdE * dt, sp - 0.2);
-      const p = at(se); fig.g.position.set(p[0], groundY(p[0], p[1]), p[1]); figOn = true; fig.g.visible = true;
+      const p = at(se);
+      if (G.hop) {
+        G.g.position.set(p[0], groundY(p[0], p[1]) + Math.abs(Math.sin(hopPh)) * 0.34, p[1]); G.g.visible = true; pocong.on = true;
+        G.g.rotation.y += angDiff(Math.atan2(ME.x - p[0], ME.z - p[1]) - G.g.rotation.y) * Math.min(1, dt * 6); G.g.rotation.x = 0.1;
+        const sn = Math.sin(hopPh); if (sn * lastSin < 0) noiseBurst(0.16, clamp(1.4 - (sp - se) / 12, 0.2, 1) * 0.18, 170); lastSin = sn;
+      } else { G.g.position.set(p[0], groundY(p[0], p[1]), p[1]); G.g.visible = true; figOn = true; }
       const gap = sp - se; CH.gap = gap;
       fear = Math.max(fear, clamp(1 - gap / 12, 0, 0.95));
       stT -= dt; if (stT <= 0) { stT = 0.36; sfx.stepsBehind(1, clamp(1.2 - gap / 14, 0.15, 1)); }
@@ -1900,13 +2014,16 @@ function CHASE(pts, opt) {
       if (gap < 1.7) {                                                            // tertangkap
         tries++; CH.tries = tries; hit = true; ctrl = 'none'; resetInput(); vel.x = vel.z = 0;
         if (tries >= o.maxTries) { toast('Cahaya hijau menuntunmu keluar...', 3500); hit = false; return true; }
-        sfx.sting(); G_shake(1); flicker(1.2); addFear(0.2);
-        el.fade.style.transition = 'opacity 0.25s'; el.fade.style.opacity = '1';
-        later(1.0, () => { resetRun(); el.fade.style.transition = 'opacity 0.7s'; el.fade.style.opacity = '0'; toast('Dia menangkapmu... Coba lagi. Jangan berhenti, jangan menoleh.', 3500); });
+        if (startJumpscare(gg())) {                                                     // jumpscare + jeritan
+          later(1.9, () => { endJumpscare(); resetRun(); el.fade.style.transition = 'opacity 0.7s'; el.fade.style.opacity = '0'; toast('Dia menangkapmu... Coba lagi. Jangan berhenti, jangan menoleh.', 3500); });
+        } else {
+          addFear(0.2); el.fade.style.transition = 'opacity 0.25s'; el.fade.style.opacity = '1';
+          later(1.0, () => { resetRun(); el.fade.style.transition = 'opacity 0.7s'; el.fade.style.opacity = '0'; toast('Dia menangkapmu... Coba lagi. Jangan berhenti, jangan menoleh.', 3500); });
+        }
       }
       return false;
     },
-    done() { CH.on = false; chaseHud(false); hideFig(); ctrl = 'none'; resetInput(); setObj(''); }
+    done() { CH.on = false; chaseHud(false); endJumpscare(); GH.laras.hide(); GH.pocong.hide(); ctrl = 'none'; resetInput(); setObj(''); }
   };
 }
 
@@ -1923,7 +2040,7 @@ function cycleSens() { SENS = SENS < 0.85 ? 1 : (SENS < 1.15 ? 1.5 : 0.6); try {
 let SETBACK = 'title';
 function showSettings(back) {
   if (back) SETBACK = back;
-  showPanel('<div class="board"><h1>Pengaturan</h1><button class="cta alt" data-do="sCam">Kamera: ' + (FPV ? 'orang pertama (mata)' : 'orang ketiga') + '</button><button class="cta alt" data-do="sTxt">Ukuran teks: ' + txtLabel() + '</button><button class="cta alt" data-do="sSens">Sensitivitas kamera: ' + sensLabel() + '</button><button class="cta alt" data-do="sBright">Kecerahan: ' + brightLabel() + '</button><button class="cta alt" data-do="sQual">Kualitas grafis: ' + qualLabel() + '</button><button class="cta" data-do="sBack">Kembali</button></div>');
+  showPanel('<div class="board"><h1>Pengaturan</h1><button class="cta alt" data-do="sCam">Kamera: ' + (FPV ? 'orang pertama (mata)' : 'orang ketiga') + '</button><button class="cta alt" data-do="sJump">Jumpscare (kejutan + jeritan): ' + (JUMPSCARE ? 'nyala' : 'mati') + '</button><button class="cta alt" data-do="sTxt">Ukuran teks: ' + txtLabel() + '</button><button class="cta alt" data-do="sSens">Sensitivitas kamera: ' + sensLabel() + '</button><button class="cta alt" data-do="sBright">Kecerahan: ' + brightLabel() + '</button><button class="cta alt" data-do="sQual">Kualitas grafis: ' + qualLabel() + '</button><button class="cta" data-do="sBack">Kembali</button></div>');
 }
 function readSave() { try { const o = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); return (o && o.ch) ? o : null; } catch (e) { return null; } }
 function startBab4() {
@@ -1954,7 +2071,7 @@ function showTutorial() {
 // ambient (suara hutan, berulang), musik (musik latar, berulang), langkah, bisik, jantung, sting (kejutan).
 // Kalau file tidak ada, game memakai suara buatan dan musik prosedural di bawah.
 const SMP = {};
-const SMP_FILES = ['ambient', 'musik', 'langkah', 'bisik', 'jantung', 'sting'];
+const SMP_FILES = ['ambient', 'musik', 'langkah', 'bisik', 'jantung', 'sting', 'jeritan'];
 function playSmp(n, v, rate, loop) {
   if (!AU.ctx || !AU.on || !SMP[n]) return null;
   try { const s = AU.ctx.createBufferSource(); s.buffer = SMP[n]; s.loop = !!loop; if (rate) s.playbackRate.value = rate; const g = AU.ctx.createGain(); g.gain.value = v; s.connect(g); g.connect(AU.master); s.start(); return { s, g }; } catch (e) { return null; }
@@ -2048,12 +2165,12 @@ function prepFbx(root) {
     o.material = arr ? out : out[0];
   });
 }
-const BUILD = 'v19';
+const BUILD = 'v23';
 const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
 const modelState = {};
-function updVer() { verEl.textContent = BUILD + (NET.role !== 'solo' ? ' [' + NET.role + ']' : '') + ' | ' + Object.keys(MODELS).concat(['pohon', 'gunung', 'torii', 'rumput', 'awan']).map(k => k + ':' + (modelState[k] || '-')).join(' '); }
+function updVer() { verEl.textContent = BUILD + (NET.role !== 'solo' ? ' [' + NET.role + ']' : '') + ' | ' + Object.keys(MODELS).concat(['pohon', 'gunung', 'torii', 'rumput', 'awan', 'laras', 'pocong']).map(k => k + ':' + (modelState[k] || '-')).join(' '); }
 let rakaTopHex = 0xb6e3a0;
 function geoAxes(g) {
   g.computeBoundingBox(); const b = g.boundingBox;
@@ -2265,10 +2382,24 @@ Object.assign(MOODS.petil, { cloud: C(0x1e3a36), cloudA: 0.5, mount: C(0x0d1a1a)
 const DEF_CLOUD = C(0x888899), DEF_MOUNT = C(0x333344);
 const cloudMat = new THREE.MeshBasicMaterial({ color: 0xf2a98a, transparent: true, opacity: 0.85, depthWrite: false, fog: false });
 const mountMat = new THREE.MeshBasicMaterial({ color: 0x86687c, fog: false, side: THREE.DoubleSide });
+const mountMats = [], mountHaze = new THREE.Color(0x6a4a52);
+function mkMountMat(mix, tex, vcol) {      // kaki gunung memudar ke warna kabut cakrawala; lapisan yang lebih jauh lebih berkabut
+  const m = new THREE.MeshBasicMaterial({ color: 0x86687c, fog: false, side: THREE.DoubleSide, vertexColors: !!vcol });
+  if (tex) m.map = tex;
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uHaze = { value: mountHaze }; sh.uniforms.uMix = { value: mix };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vMY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMY = position.y;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uHaze; uniform float uMix; varying float vMY;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\nfloat hzf = 1.0 - smoothstep(0.0, 1.9, vMY);\ndiffuseColor.rgb = mix(diffuseColor.rgb, uHaze, clamp(hzf * 0.85 + uMix, 0.0, 1.0));');
+  };
+  mountMats.push(m); return m;
+}
 function envApply(a, b, t) {
   cloudMat.color.lerpColors(a.cloud || DEF_CLOUD, b.cloud || DEF_CLOUD, t);
   cloudMat.opacity = lerp(a.cloudA === undefined ? 0.6 : a.cloudA, b.cloudA === undefined ? 0.6 : b.cloudA, t);
-  mountMat.color.lerpColors(a.mount || DEF_MOUNT, b.mount || DEF_MOUNT, t);
+  mountMat.color.lerpColors(a.mount || DEF_MOUNT, b.mount || DEF_MOUNT, t).multiply(MTINT);
+  mountMats.forEach(m => m.color.lerpColors(a.mount || DEF_MOUNT, b.mount || DEF_MOUNT, t).multiply(MTINT));
+  if (scene.fog && scene.fog.color) mountHaze.copy(scene.fog.color);
 }
 
 /* awan: lembar awan dipotong-potong jadi beberapa bidang di kubah langit */
@@ -2290,15 +2421,50 @@ new THREE.TextureLoader().load('awan.png', tex => {
   } catch (e) { console.warn('awan gagal dipasang:', e); modelState.awan = 'err'; updVer(); }
 }, undefined, () => { modelState.awan = 'x'; updVer(); });
 
-/* gunung latar (menggantikan kerucut polos) */
+/* gunung latar: gugusan berlapis yang lebar (bukan satu puncak kurus) + bukit kaki, mengelilingi pemain di setiap bab */
+const mountGroup = new THREE.Group(); scene.add(mountGroup);
+const MTINT = new THREE.Color(0xb8ffc7);        // rona hijau hutan tropis pada gunung
+function setMountZone(clear) { if (clear) mountGroup.position.set(600, 0, -600); else mountGroup.position.set(0, 0, 0); }   // di petilasan gugusan ikut berpindah
+const MOUNT_RANGE = [               // a = arah (derajat dari utara, positif ke timur), d = jarak, w = lebar, h = tinggi, r = putaran, L = tingkat detail (0 penuh, 1 sedang, 2 sederhana), mix = kabut tambahan
+  { a: -8, d: 310, w: 36, h: 24, r: 0.2, L: 0, mix: 0.14 },
+  { a: -42, d: 330, w: 34, h: 19, r: 1, L: 1, mix: 0.18 },
+  { a: 28, d: 335, w: 36, h: 20, r: -0.7, L: 1, mix: 0.18 },
+  { a: 6, d: 440, w: 54, h: 33, r: 2.6, L: 1, mix: 0.34 },
+  { a: -28, d: 450, w: 50, h: 29, r: 0.4, L: 1, mix: 0.36 },
+  { a: 46, d: 440, w: 48, h: 27, r: 1.9, L: 1, mix: 0.38 },
+  { a: -64, d: 430, w: 46, h: 24, r: -2.2, L: 2, mix: 0.4 },
+  { a: 70, d: 430, w: 46, h: 22, r: 0.9, L: 2, mix: 0.42 },
+  { a: 98, d: 400, w: 50, h: 16, r: 0.3, L: 2, mix: 0.48 },
+  { a: -100, d: 400, w: 50, h: 16, r: 2, L: 2, mix: 0.48 },
+  { a: 140, d: 400, w: 52, h: 15, r: 1.2, L: 2, mix: 0.5 },
+  { a: -140, d: 400, w: 52, h: 15, r: -0.4, L: 2, mix: 0.5 },
+  { a: 180, d: 400, w: 54, h: 14, r: 2.5, L: 2, mix: 0.52 }
+];
+const MOUNT_RINGS = [{ R: 300, h: 24, amp: 14, seed: 0.7, inset: 45, mix: 0.16 }, { R: 390, h: 42, amp: 22, seed: 2.1, inset: 80, mix: 0.34 }];      // bukit kaki yang mengisi celah cakrawala
+function mkRing(o) {
+  const n = 120, pos = [], col = [], idx = [];
+  for (let i = 0; i <= n; i++) {
+    const a = i / n * Math.PI * 2, h = Math.max(o.h * 0.35, o.h + o.amp * (0.55 * Math.sin(2 * a + o.seed) + 0.3 * Math.sin(5 * a + o.seed * 1.7) + 0.15 * Math.sin(11 * a + o.seed * 2.3)));
+    pos.push(Math.sin(a) * (o.R - o.inset), -14, -Math.cos(a) * (o.R - o.inset), Math.sin(a) * o.R, h - 14, -Math.cos(a) * o.R);
+    col.push(0.34, 0.46, 0.36, 0.5, 0.62, 0.5);
+  }
+  for (let i = 0; i < n; i++) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx);
+  return g;
+}
 gltfLoader.load('gunung.glb', gltf => {
   try {
-    let src = null; gltf.scene.traverse(o => { if (!src && o.isMesh) src = o; });
-    if (!src) return;
-    mountMat.map = src.material.map; mountMat.needsUpdate = true;
-    [[-40, -10, -300, 26, 0.2], [190, -10, -335, 22, -0.75], [-250, -10, -320, 20, 0.95]].forEach(p => {
-      const m = new THREE.Mesh(src.geometry, mountMat); m.position.set(p[0], p[1], p[2]); m.scale.set(p[3], p[3] * 0.95, p[3]); m.rotation.y = p[4]; m.frustumCulled = false; scene.add(m);
+    const parts = [];
+    gltf.scene.traverse(o => { if (!o.isMesh) return; const m = /L([012])$/.exec(o.name || '') || /L([012])$/.exec((o.parent && o.parent.name) || ''); parts[m ? +m[1] : parts.length] = o; });
+    const L0 = parts[0] || parts[1]; if (!L0) return;
+    const L1 = parts[1] || L0, L2 = parts[2] || L1, tex0 = L0.material.map;
+    MOUNT_RANGE.forEach(r => {
+      const src = r.L === 0 ? L0 : (r.L === 1 ? L1 : L2), vcol = src !== L0;
+      const m = new THREE.Mesh(src.geometry, mkMountMat(r.mix, vcol ? null : tex0, vcol)), az = r.a * Math.PI / 180;
+      m.position.set(Math.sin(az) * r.d, -12, -Math.cos(az) * r.d); m.scale.set(r.w, r.h, r.w); m.rotation.y = r.r; m.frustumCulled = false; mountGroup.add(m);
     });
+    MOUNT_RINGS.forEach(o => { const m = new THREE.Mesh(mkRing(o), mkMountMat(o.mix, null, true)); m.frustumCulled = false; mountGroup.add(m); });
     PEAKS.forEach(pk => { pk.visible = false; }); modelState.gunung = 'ok'; updVer();
   } catch (e) { console.warn('gunung.glb gagal dipasang:', e); modelState.gunung = 'err'; updVer(); }
 }, undefined, () => { modelState.gunung = 'x'; updVer(); });
@@ -2371,6 +2537,68 @@ function updateGrass(dt) {
   for (let L = 0; L < 3; L++) { grass.im[L].count = cnt[L]; grass.im[L].instanceMatrix.needsUpdate = true; }
 }
 
+/* =====================  HANTU: POCONG & LARAS (MODEL ASLI), JUMPSCARE + JERITAN  ===================== */
+const pocong = { g: new THREE.Group(), on: false };
+pocong.g.visible = false; scene.add(pocong.g);
+const GH = {
+  laras: { g: fig.g, base: 1.12, faceY: 1.6, hop: false, show(x, z) { showFig(x, z); }, hide() { hideFig(); } },
+  pocong: { g: pocong.g, base: 1.0, faceY: 1.5, hop: true, show(x, z) { pocong.g.position.set(x, groundY(x, z), z); pocong.g.visible = true; pocong.on = true; }, hide() { pocong.g.visible = false; pocong.on = false; } }
+};
+function loadGhost(file, key, target) {
+  gltfLoader.load(file, gltf => {
+    try {
+      let src = null; gltf.scene.traverse(o => { if (!src && o.isMesh) src = o; });
+      if (!src) return;
+      const m = new THREE.Mesh(src.geometry, new THREE.MeshLambertMaterial({ map: src.material.map, side: THREE.DoubleSide, emissive: 0x1c1c20 }));
+      target.add(m);
+      if (key === 'laras') fig.blocks.forEach(b => { b.visible = false; });
+      modelState[key] = 'ok'; updVer();
+    } catch (e) { console.warn(file + ' gagal dipasang:', e); modelState[key] = 'err'; updVer(); }
+  }, undefined, () => { modelState[key] = 'x'; updVer(); });
+}
+loadGhost('laras.glb', 'laras', fig.g);
+loadGhost('pocong.glb', 'pocong', pocong.g);
+
+/* ---- jumpscare ---- */
+const JS = { on: false, t: 0, gh: null, fx: 0, fz: 0, cp: [0, 0, 0], cl: [0, 0, 0], fade: false };
+let JUMPSCARE = true; try { JUMPSCARE = localStorage.getItem('sh_js') !== '0'; } catch (e) { }
+const redFx = document.createElement('div');
+Object.assign(redFx.style, { position: 'fixed', left: '0', top: '0', right: '0', bottom: '0', background: 'radial-gradient(circle at 50% 45%, rgba(120,0,0,.05), rgba(150,0,0,.85))', opacity: '0', pointerEvents: 'none', zIndex: '14' });
+if (document.body) document.body.appendChild(redFx);
+sfx.scream = function () {
+  if (!AU.ctx || !AU.on) return;
+  if (SMP.jeritan) { playSmp('jeritan', 1.0); return; }
+  try { const c = AU.ctx; AU.master.gain.cancelScheduledValues(c.currentTime); AU.master.gain.setValueAtTime(1.0, c.currentTime); AU.master.gain.setTargetAtTime(0.6, c.currentTime + 1.6, 0.3); } catch (e) { }
+  [[1650, 560, 0], [2100, 700, 0.02], [1250, 430, 0.05], [2600, 900, 0.03]].forEach(a => tone(a[0], 1.3, 'sawtooth', 0.26, a[1], a[2]));
+  tone(88, 1.0, 'square', 0.32, 38);
+  noiseBurst(1.4, 0.42, 4200); noiseBurst(0.6, 0.3, 1500);
+};
+function startJumpscare(gh) {
+  sfx.scream(); fear = 1; G_shake(2.4); flicker(2.0);
+  if (!JUMPSCARE) return false;
+  const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
+  JS.on = true; JS.t = 0; JS.gh = gh; JS.fx = fx; JS.fz = fz; JS.fade = false;
+  const gx = ME.x + fx * 1.05, gz = ME.z + fz * 1.05;
+  gh.show(gx, gz); gh.g.rotation.y = Math.atan2(-fx, -fz); gh.g.rotation.x = 0; gh.g.scale.setScalar(gh.base * 0.9);
+  JS.cp = [ME.x, ME.y + 1.62, ME.z]; JS.cl = [gx, gh.g.position.y + gh.faceY, gz];
+  redFx.style.opacity = '1';
+  return true;
+}
+function jumpTick(dt) {
+  if (!JS.on) return;
+  JS.t += dt;
+  const t = JS.t, k = Math.min(1, t / 0.28), e = 1 - (1 - k) * (1 - k), dist = 1.05 - 0.5 * e, gx = ME.x + JS.fx * dist, gz = ME.z + JS.fz * dist, g = JS.gh.g;
+  g.position.set(gx, groundY(gx, gz), gz); g.scale.setScalar(JS.gh.base * (0.9 + 0.35 * e));
+  JS.cl = [gx, g.position.y + JS.gh.faceY, gz];
+  shakeT = Math.max(shakeT, 1);
+  redFx.style.opacity = Math.sin(t * 38) > -0.2 ? '1' : '0.45';
+  if (t > 1.15 && !JS.fade) { JS.fade = true; el.fade.style.transition = 'opacity 0.45s'; el.fade.style.opacity = '1'; }
+}
+function endJumpscare() {
+  JS.on = false; JS.fade = false; redFx.style.opacity = '0';
+  if (JS.gh) { JS.gh.g.scale.setScalar(JS.gh.base); JS.gh.hide(); }
+}
+
 /* =====================  ALUR APLIKASI  ===================== */
 let state = 'title';
 function showTitle() {
@@ -2400,6 +2628,7 @@ el.panel.addEventListener('click', e => {
   else if (a === 'settings') showSettings('title');
   else if (a === 'settings2') showSettings('pause');
   else if (a === 'sCam') { FPV = !FPV; camPitch = FPV ? 0.05 : 0.26; try { localStorage.setItem('sh_fp', FPV ? '1' : '0'); } catch (e) { } showSettings(); }
+  else if (a === 'sJump') { JUMPSCARE = !JUMPSCARE; try { localStorage.setItem('sh_js', JUMPSCARE ? '1' : '0'); } catch (e) { } showSettings(); }
   else if (a === 'sTxt') { cycleTxt(); showSettings(); }
   else if (a === 'sSens') { cycleSens(); showSettings(); }
   else if (a === 'sBright') { cycleBright(); showSettings(); }
@@ -2413,8 +2642,13 @@ el.panel.addEventListener('click', e => {
   else if (a === 'resume') { hidePanel(); state = 'play'; }
   else if (a === 'menu') showTitle();
   else if (a === 'mpHost') mpHost();
-  else if (a === 'mpJoin') showJoinForm('');
-  else if (a === 'mpGo') { const iv = $('#joinCode'); mpJoin(iv ? iv.value : ''); }
+  else if (a === 'mpJoin') { joinCode = ''; showJoinForm(''); }
+  else if (a === 'mpGo') mpJoin(joinCode);
+  else if (a.indexOf('mpK_') === 0) mpKey(a.slice(4));
+  else if (a === 'mpBk') mpBack();
+  else if (a === 'mpCopy') mpCopyText(NET.code);
+  else if (a === 'mpShare') mpShare();
+  else if (a === 'mpDiag') mpDiag();
   else if (a === 'mpStart1' || a === 'mpStart2' || a === 'mpStart3') { if (NET.role === 'host' && NET.peer && !NET.began) { NET.startCh = +a.slice(-1); NET.startTry = 0; NET.startT = 0; NET.guestReady = false; renderHostLobby(); } }
   else if (a === 'mpCancel') showTitle();
 });
@@ -2506,6 +2740,7 @@ function loop(now) {
   else if (state === 'title') clock += dt;
   if (state === 'play' || state === 'end') updateB2(dt, clock);
   netTick(dt);
+  jumpTick(dt);
   musicTick(dt);
   updateTreeLOD(dt);
   updateGrass(dt);
@@ -2527,6 +2762,6 @@ function loop(now) {
     }
   }
 }
-if (window.__DEBUG) window.__dbg = { keys, CAMS, camera, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, get camPitch() { return camPitch; }, set camPitch(v) { camPitch = v; }, get FPV() { return FPV; }, CH, NET, get STEPN() { return STEPN; }, get ME() { return ME; }, get WAIT() { return WAIT; }, grass, cloudGroup, mountMat, cloudMat, vel, PH, treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
+if (window.__DEBUG) window.__dbg = { mountGroup, JS, pocong, GH, mountMats, keys, CAMS, camera, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, get camPitch() { return camPitch; }, set camPitch(v) { camPitch = v; }, get FPV() { return FPV; }, CH, NET, get STEPN() { return STEPN; }, get ME() { return ME; }, get WAIT() { return WAIT; }, grass, cloudGroup, mountMat, cloudMat, vel, PH, treeLOD, TREE_SPOTS, circles, BLOBS, S, raka, dinda, bayu, mbah, ACT, get state() { return state; }, get goal() { return goal; }, DLG, get ctrl() { return ctrl; }, camera };
 showTitle();
 requestAnimationFrame(t => { last = t; requestAnimationFrame(loop); });
