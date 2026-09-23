@@ -711,8 +711,6 @@ function CHOICE(opts, secs) {
   };
 }
 let goal = null;
-const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 7, 14, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.32, depthWrite: false, fog: false, side: THREE.DoubleSide }));
-beam.visible = false; scene.add(beam);
 function GOTO(x, z, r, quiet) { const g = { x, z, r, label: null, done: false, quiet: !!quiet }; return { init() { goal = g; }, test: () => g.done, done() { goal = null; el.act.classList.remove('on'); } }; }
 function ACTION(label, x, z, r) { const g = { x, z, r, label, done: false }; return { init() { goal = g; }, test: () => g.done, done() { goal = null; el.act.classList.remove('on'); } }; }
 function doAction() {
@@ -734,13 +732,12 @@ function* bab1() {
   camYaw = 0; camPitch = 0.26;
   cineTo(START.x + 2.0, 3.0, START.z + 7, 0, 16, -60, 0.4); snapCam();
   cineTo(START.x + 1.0, 2.6, START.z + 6.5, 0, 14, -60, 0.35);
-  yield CARD('Bab 1', 'Kaki Gunung', 3);
   yield FADE(false, 1.6);
   yield SAY('Narator', 'Senja di kaki Gunung Pandan, Bojonegoro. Kabut tipis turun pelan dari lereng.');
   yield SAY('Raka', 'Akhirnya sampai juga. Lihat itu, puncaknya sudah tertutup awan.');
   yield SAY('Dinda', 'Serius mau naik sekarang? Sebentar lagi gelap.');
   yield SAY('Bayu', 'Justru itu serunya! Kita cuma kemah di pos dua. Lapor dulu ke juru kunci, yuk.');
-  yield DO(() => { dinda.follow = true; dinda.off = [-1.6, 2.2]; bayu.follow = true; bayu.off = [1.7, 2.6]; followCam(); ctrl = 'walk'; setObj('Temui juru kunci di pos jaga (tanda emas).'); });
+  yield DO(() => { dinda.follow = true; dinda.off = [-1.6, 2.2]; bayu.follow = true; bayu.off = [1.7, 2.6]; followCam(); ctrl = 'walk'; setObj('Temui juru kunci di pos jaga.'); });
   yield GOTO(MK.x - 2.3, MK.z + 0.8, 2.3);
   yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); dinda.follow = false; bayu.follow = false; faceTo(raka, mbah.x, mbah.z); faceTo(dinda, mbah.x, mbah.z); faceTo(bayu, mbah.x, mbah.z); dinda.watch = bayu.watch = true; frame2(raka, mbah, 4.4, 1, 1.6); });
   yield T(0.6);
@@ -1213,7 +1210,6 @@ function* bab2() {
     const x = trailX(ZA); place(raka, x, ZA, Math.PI); place(dinda, x - 1.5, ZA + 2.4, Math.PI); place(bayu, x + 1.6, ZA + 2.9, Math.PI);
     dinda.watch = bayu.watch = false; camYaw = 0; camPitch = 0.26; followCam(); snapCam();
   });
-  yield CARD('Bab 2', 'Jalur yang Berbisik', 3.4);
   yield FADE(false, 2.2);
   yield SAY('Narator', 'Pukul 19.40. Gapura sudah jauh di belakang. Kabut turun lebih cepat dari yang diperkirakan.');
   if (S.flags.jaketHijau) yield SAY('Narator', 'Di sorot senter, jaket hijau muda itu tampak seperti menyala sendiri.');
@@ -1502,7 +1498,6 @@ function* bab3() {
     place(bayu, ALT.x + 2.4, ALT.z + 6.4, 0); faceTo(bayu, raka.x, raka.z); bayu.follow = false; bayu.watch = true;
     S.ch = 3; camYaw = 0; followCam(); snapCam(); saveGame();
   });
-  yield CARD('Bab 3', 'Yang Keempat', 3.4);
   yield FADE(false, 2.2);
   yield SAY('Narator', 'Gelap. Jangkrik berhenti bersuara, seolah seluruh hutan menahan napas.');
   yield SAY('Narator', 'Enam lilin di altar sudah padam. Di kaki beringin, sesuatu berdiri dan menunggu.');
@@ -1637,7 +1632,6 @@ function* bab4(END) {
     else bayu.g.visible = false;
     camYaw = Math.PI; followCam(); snapCam();
   });
-  yield CARD('Bab 4', 'Fajar Jumat Kliwon', 3.2);
   yield FADE(false, 2.0);
   yield SAY('Narator', 'Fajar Jumat Kliwon. Kabut menipis, dan burung-burung kembali bersuara di Gunung Pandan.');
   yield SAY('Narator', 'Di kejauhan, rombongan warga mulai naik membawa tumpeng dan bunga untuk sedekah bumi.');
@@ -2710,9 +2704,7 @@ function updatePlayer(dt) {
   if (ME.moving && clock - stepT > 0.48) { stepT = clock; sfx.step(); }
 }
 function updateGoal(t) {
-  if (!goal) { beam.visible = false; return; }
-  beam.visible = !goal.quiet;
-  beam.position.set(goal.x, groundY(goal.x, goal.z) + 3.5, goal.z); beam.scale.set(1 + 0.15 * Math.sin(t * 3), 1, 1 + 0.15 * Math.sin(t * 3));
+  if (!goal) return;
   const d = Math.hypot(ME.x - goal.x, ME.z - goal.z);
   if (d <= goal.r) { if (goal.label) { el.act.textContent = goal.label; el.act.classList.add('on'); } else if (NET.role !== 'guest') goal.done = true; }
   else el.act.classList.remove('on');
@@ -2722,6 +2714,19 @@ function autoPlay() {
   if (DLG.on && DLG.finished) DLG.tapped = true;
   if (el.choices.classList.contains('on')) LASTCHOICE = window.__CHOICE || 0;
   if (goal && !goal.done) { raka.x = goal.x; raka.z = goal.z; if (goal.label) { el.act.classList.add('on'); doAction(); } }
+}
+
+/* ---------- rasa takut yang naik terus selama benar-benar mendaki di jalur (bukan lompat per bagian) ---------- */
+let hikeBase = null, climbFear = 0;
+function updateClimbDread(dt) {
+  if (CORR.mode === 'trail') {
+    if (!hikeBase) hikeBase = { fogD: scene.fog.density, hemiI: hemi.intensity, dirI: dir.intensity, z0: ME.z };
+    const traveled = clamp((hikeBase.z0 - ME.z) / 170, 0, 1);
+    climbFear += (traveled - climbFear) * Math.min(1, dt * 0.5);
+    scene.fog.density = hikeBase.fogD * (1 + climbFear * 0.85);
+    hemi.intensity = hikeBase.hemiI * (1 - climbFear * 0.3);
+    dir.intensity = hikeBase.dirI * (1 - climbFear * 0.3);
+  } else if (hikeBase) { hikeBase = null; climbFear = 0; }
 }
 function update(dt) {
   clock += dt;
@@ -2746,6 +2751,7 @@ function loop(now) {
   updateGrass(dt);
   updateActors(dt, clock);
   updateCamera(dt);
+  updateClimbDread(dt);
   // matahari/bulan dan bayangan mengikuti pemain
   dir.position.set(ME.x + LIGHT_DIR[0] * 60, ME.y + LIGHT_DIR[1] * 60, ME.z + LIGHT_DIR[2] * 60);
   dir.target.position.set(ME.x, ME.y, ME.z);
