@@ -172,6 +172,7 @@ const PEAKS = [];   // kerucut gunung polos (disembunyikan bila gunung.glb termu
   peak.position.set(-10, 60, -190); scene.add(peak); PEAKS.push(peak);
 })();
 
+let trailMesh = null;
 (function buildTrail() {
   const pos = [], idx = [], N = 170, w = 1.7;
   for (let i = 0; i <= N; i++) {
@@ -182,7 +183,7 @@ const PEAKS = [];   // kerucut gunung polos (disembunyikan bila gunung.glb termu
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
   const m = new THREE.Mesh(g, LMat({ color: 0x6b5237, roughness: 1, flatShading: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-  m.receiveShadow = true; scene.add(m);
+  m.receiveShadow = true; scene.add(m); trailMesh = m;
 })();
 
 /* ---------- tumbukan ---------- */
@@ -474,9 +475,17 @@ function updateActors(dt, t) {
     const P = a.p;
     a.ph += dt * (a.moving ? 8.5 : 0);
     const sw = a.moving ? 1 : 0;
-    P.legs[0].rotation.x = Math.sin(a.ph) * 0.7 * sw; P.legs[1].rotation.x = -Math.sin(a.ph) * 0.7 * sw;
-    P.arms[0].rotation.x = -Math.sin(a.ph) * 0.6 * sw; P.arms[1].rotation.x = Math.sin(a.ph) * 0.6 * sw;
-    P.body.position.y = Math.abs(Math.sin(a.ph)) * 0.04 * sw + Math.sin(t * 1.6 + a.seed) * 0.006;
+    if (a === ME && BIKE.mounted) {
+      const cyc = Math.sin(a.ph * 1.8);
+      P.legs[0].rotation.x = -0.85 + cyc * 0.6; P.legs[1].rotation.x = -0.85 - cyc * 0.6;
+      P.arms[0].rotation.x = -1.2; P.arms[1].rotation.x = -1.2;
+      P.body.rotation.x = 0.3; P.body.position.y = 0.06;
+    } else {
+      P.body.rotation.x = 0;
+      P.legs[0].rotation.x = Math.sin(a.ph) * 0.7 * sw; P.legs[1].rotation.x = -Math.sin(a.ph) * 0.7 * sw;
+      P.arms[0].rotation.x = -Math.sin(a.ph) * 0.6 * sw; P.arms[1].rotation.x = Math.sin(a.ph) * 0.6 * sw;
+      P.body.position.y = Math.abs(Math.sin(a.ph)) * 0.04 * sw + Math.sin(t * 1.6 + a.seed) * 0.006;
+    }
     if (a !== ME) {
       const rel = a.watch ? clamp(angDiff(Math.atan2(raka.x - a.x, raka.z - a.z) - a.face), -0.9, 0.9) : 0;
       a.headYaw = lerp(a.headYaw, rel, Math.min(1, dt * 4)); P.head.rotation.y = a.headYaw;
@@ -716,8 +725,9 @@ function ACTION(label, x, z, r) { const g = { x, z, r, label, done: false }; ret
 function doAction() {
   if (goal && goal.label && el.act.classList.contains('on') && state === 'play') {
     if (NET.role === 'guest') { netSend({ t: 'a' }); sfx.note(); return; }
-    goal.done = true; sfx.note();
+    goal.done = true; sfx.note(); return;
   }
+  if (!goal && bikeNear && el.act.classList.contains('on') && state === 'play') toggleBike();
 }
 
 /* =====================  CERITA: BAB 1  ===================== */
@@ -733,73 +743,29 @@ function* bab1() {
   cineTo(START.x + 2.0, 3.0, START.z + 7, 0, 16, -60, 0.4); snapCam();
   cineTo(START.x + 1.0, 2.6, START.z + 6.5, 0, 14, -60, 0.35);
   yield FADE(false, 1.6);
-  yield SAY('Narator', 'Senja di kaki Gunung Pandan, Bojonegoro. Kabut tipis turun pelan dari lereng.');
-  yield SAY('Raka', 'Akhirnya sampai juga. Lihat itu, puncaknya sudah tertutup awan.');
-  yield SAY('Dinda', 'Serius mau naik sekarang? Sebentar lagi gelap.');
-  yield SAY('Bayu', 'Justru itu serunya! Kita cuma kemah di pos dua. Lapor dulu ke juru kunci, yuk.');
+  yield SAY('Narator', 'Senja di kaki Gunung Pandan. Puncaknya sudah tertutup awan.');
   yield DO(() => { dinda.follow = true; dinda.off = [-1.6, 2.2]; bayu.follow = true; bayu.off = [1.7, 2.6]; followCam(); ctrl = 'walk'; setObj('Temui juru kunci di pos jaga.'); });
   yield GOTO(MK.x - 2.3, MK.z + 0.8, 2.3);
   yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); dinda.follow = false; bayu.follow = false; faceTo(raka, mbah.x, mbah.z); faceTo(dinda, mbah.x, mbah.z); faceTo(bayu, mbah.x, mbah.z); dinda.watch = bayu.watch = true; frame2(raka, mbah, 4.4, 1, 1.6); });
-  yield T(0.6);
-  yield SAY('Mbah Karto', 'Nak, mau naik malam-malam begini?');
-  yield SAY('Raka', 'Kami cuma mau kemah di pos dua, Mbah. Besok pagi turun lagi.');
-  yield SAY('Mbah Karto', 'Gunung ini punya aturan. Dengarkan baik-baik, dan catat.');
-  yield SAY('Mbah Karto', 'Pertama: jangan naik memakai pakaian hijau muda. Itu warna selendang Nyi Gendrosari. Beliau tidak suka ditiru.');
-  yield DO(() => addNote('Jangan mendaki memakai pakaian hijau muda (warna selendang Nyi Gendrosari).'));
-  yield SAY('Mbah Karto', 'Kedua: jangan ambil apa pun dari jalur, sekecil apa pun.');
-  yield DO(() => addNote('Jangan mengambil apa pun dari jalur pendakian.'));
-  yield SAY('Mbah Karto', 'Ketiga: kalau ada yang memanggil namamu dari dalam hutan, jangan menoleh dan jangan menjawab.');
-  yield DO(() => addNote('Jika ada yang memanggil namamu dari hutan, jangan menoleh dan jangan menjawab.'));
-  yield DO(() => { cineTo(raka.x + 1.5, raka.y + 1.9, raka.z + 3.2, raka.x, raka.y + 1.3, raka.z, 2.6); });
-  yield SAY('Bayu', 'Eh, Raka... jaketmu.');
-  yield SAY('Dinda', 'Itu hijau muda, kan?');
-  yield SAY('Raka', 'Aku cuma bawa jaket ini...');
+  yield SAY('Mbah Karto', 'Gunung ini punya aturan. Jangan pakai hijau muda, jangan ambil apa pun dari jalur, dan kalau ada yang memanggil namamu, jangan menoleh.');
+  yield DO(() => {
+    addNote('Jangan mendaki memakai pakaian hijau muda (warna selendang Nyi Gendrosari).');
+    addNote('Jangan mengambil apa pun dari jalur pendakian.');
+    addNote('Jika ada yang memanggil namamu dari hutan, jangan menoleh dan jangan menjawab.');
+  });
   yield CHOICE(['Balik jaketnya, pakai sisi abu-abu', 'Tetap pakai. Cuma cerita orang tua.']);
-  if (LASTCHOICE === 0) {
-    S.flags.jaketDibalik = true; setRakaTop(0x8a8f96); saveGame();
-    yield DO(() => frame2(raka, mbah, 4.4, 1, 1.6));
-    yield SAY('Mbah Karto', 'Bagus. Sisi dalamnya aman. Tapi jangan sampai terbuka.');
-  } else {
-    S.flags.jaketHijau = true; saveGame();
-    yield DO(() => frame2(raka, mbah, 4.4, 1, 1.6));
-    yield SAY('Mbah Karto', '...Kalau begitu, jangan bilang Mbah tidak memperingatkan.');
-    yield SAY('Raka', 'Cuma mitos kok, Mbah.');
-    yield SAY('Dinda', 'Raka...');
-  }
+  if (LASTCHOICE === 0) { S.flags.jaketDibalik = true; setRakaTop(0x8a8f96); saveGame(); }
+  else { S.flags.jaketHijau = true; saveGame(); }
   yield DO(() => { followCam(); ctrl = 'walk'; dinda.follow = true; bayu.follow = true; dinda.watch = bayu.watch = false; setObj('Ambil senter di meja pos jaga.'); });
   const TB = { x: HUT.x + 0.3, z: HUT.z - 0.6 };
   yield ACTION('Ambil senter', TB.x, TB.z, 1.9);
-  yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); S.items.push('Senter'); saveGame(); if (window.__senter) window.__senter.visible = false; sfx.chime(); toast('Mendapat: Senter 🔦'); });
-  yield T(1.2);
-  yield DO(() => { dinda.follow = false; bayu.follow = false; faceTo(raka, mbah.x, mbah.z); dinda.watch = bayu.watch = true; frame2(raka, mbah, 4.6, -1, 1.6); });
-  yield SAY('Mbah Karto', 'Bawa ini juga. Bunga sesajen kecil. Kalau kalian sampai di petilasan, letakkan dengan hormat.');
-  yield DO(() => { S.items.push('Bunga sesajen'); saveGame(); sfx.chime(); toast('Mendapat: Bunga sesajen 🌼'); });
-  yield SAY('Mbah Karto', 'Hati-hati, Nak. Gunung ini baik pada yang tahu diri.');
+  yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); S.items.push('Senter'); S.items.push('Bunga sesajen'); saveGame(); if (window.__senter) window.__senter.visible = false; sfx.chime(); toast('Mendapat: Senter 🔦 dan Bunga sesajen 🌼'); });
+  yield T(0.8);
   const GX = trailX(-23), GZ = -23;
   yield DO(() => { followCam(); ctrl = 'walk'; dinda.follow = true; bayu.follow = true; dinda.watch = bayu.watch = false; setObj('Berjalan ke gapura jalur pendakian.'); });
   yield GOTO(GX, GZ, 2.4);
   yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); dinda.follow = false; bayu.follow = false; place(dinda, GX - 1.8, GZ + 1.8, Math.PI); place(bayu, GX + 1.8, GZ + 2.0, Math.PI); faceTo(raka, GATE.x, GATE.z - 8); raka.face = Math.PI; cineTo(GX + 0.5, raka.y + 1.6, GZ + 4.4, GATE.x, 3.2, GATE.z - 4, 1.6); });
   yield MOOD('night', 7);
-  yield SAY('Narator', 'Langit padam. Kabut menebal di antara batang-batang jati. Tak ada suara selain angin.');
-  yield DO(() => sfx.voice());
-  yield T(1.8);
-  yield SAY('Suara', '(samar, dari dalam hutan) ...Raka...');
-  yield SAY('Dinda', 'Kamu dengar itu?');
-  yield SAY('Bayu', 'Angin doang. Ayo jalan.');
-  yield SAY('Raka', '(Catatanku... jangan menoleh. Jangan menjawab.)');
-  yield CHOICE(['Menjawab: "Siapa di sana?"', 'Diam dan terus melangkah']);
-  if (LASTCHOICE === 0) {
-    S.flags.menjawab = true; saveGame();
-    yield DO(() => sfx.voice());
-    yield T(1.2);
-    yield SAY('Suara', '(lebih dekat) ...Raka... kemarilah...');
-    yield SAY('Bayu', 'Kamu ngomong sama siapa?');
-    yield SAY('Narator', 'Sesuatu di dalam hutan telah tahu ke mana kalian akan pergi.');
-  } else {
-    S.flags.diam = true; saveGame();
-    yield T(1.2);
-    yield SAY('Narator', 'Suara itu berhenti. Entah kenapa, sunyi setelahnya terasa jauh lebih menakutkan.');
-  }
   yield FADE(true, 2);
   yield* bab2();
 }
@@ -1211,114 +1177,35 @@ function* bab2() {
     dinda.watch = bayu.watch = false; camYaw = 0; camPitch = 0.26; followCam(); snapCam();
   });
   yield FADE(false, 2.2);
-  yield SAY('Narator', 'Pukul 19.40. Gapura sudah jauh di belakang. Kabut turun lebih cepat dari yang diperkirakan.');
-  if (S.flags.jaketHijau) yield SAY('Narator', 'Di sorot senter, jaket hijau muda itu tampak seperti menyala sendiri.');
-  else yield SAY('Narator', 'Jaket yang dibalik itu terasa lebih aman. Sedikit.');
-  yield SAY('Bayu', 'Pos satu sebentar lagi. Dari sana tinggal tanjakan santai.');
-  yield SAY('Dinda', 'Aku masih kepikiran suara tadi. Kamu dengar juga, kan, Ka?');
-  if (S.flags.menjawab) yield SAY('Bayu', 'Dan kamu malah nyahut. Ka, serius?');
-  else yield SAY('Bayu', 'Angin. Sudah kubilang, angin.');
+  yield SAY('Narator', 'Kabut turun lebih cepat dari yang diperkirakan.');
   yield* walkOn('Naik ke Pos 1 (ikuti jalur).');
   yield DO(() => { ambientOn = true; });
   yield UNTIL(() => raka.z <= -36);
   yield* stopWalk();
   yield DO(() => { sfx.stepsBehind(6, 0.55); addFear(0.08); });
-  yield T(3.4);
-  yield SAY('Dinda', 'Kalian dengar langkah di belakang kita?');
-  yield SAY('Bayu', 'Babi hutan. Atau gema kaki kita sendiri.');
-  yield SAY('Dinda', 'Gema tidak datang terlambat satu ketukan.');
+  yield T(1.6);
   yield* walkOn('Sampai di Pos 1.');
   yield GOTO(POS1.x - 3.0, POS1.z + 0.6, 3.2);
   yield* stopWalk();
   yield DO(() => { faceTo(raka, POS1.x, POS1.z); cineTo(POS1.x - 6.5, terrainH(POS1.x, POS1.z) + 2.3, POS1.z + 5.2, POS1.x, terrainH(POS1.x, POS1.z) + 1.4, POS1.z, 1.6); });
-  yield SAY('Narator', 'Pos 1. Sebuah pondok kecil terbuka. Lampu minyak tua bergoyang pelan, padahal tak ada angin.');
-  yield SAY('Bayu', 'Nah, ada lampu. Aman.');
-  yield SAY('Dinda', 'Tapi sepi banget. Kayak sudah lama nggak ada yang singgah.');
+  yield SAY('Narator', 'Pos 1. Pondok kecil, lampu minyak bergoyang pelan meski tak ada angin.');
   yield* walkOn('Periksa kertas di bangku pos.');
   yield ACTION('Baca kertas', POS1.x - 0.6, POS1.z + 0.6, 2.6);
   yield* stopWalk();
   yield DO(() => { faceTo(raka, POS1.x + 1.3, POS1.z + 0.3); cineTo(POS1.x - 1.6, terrainH(POS1.x, POS1.z) + 1.9, POS1.z + 2.4, POS1.x + 1.3, terrainH(POS1.x, POS1.z) + 0.6, POS1.z + 0.3, 2.2); sfx.note(); });
-  yield SAY('Narator', 'Selembar kertas lembap di atas bangku. Tulisan pensilnya sudah luntur.');
-  yield SAY('Narator', '"Pos 1. 14 Suro 1999. Kami berempat. Laras bilang ada yang memanggil dari belakang. Kami bilang itu cuma angin."');
-  yield DO(() => { addFind('Kertas di Pos 1', '"14 Suro 1999. Kami berempat. Laras bilang ada yang memanggil dari belakang. Kami bilang itu cuma angin."'); addFear(0.12); });
-  yield SAY('Raka', 'Berempat... tahun 1999.');
-  yield SAY('Dinda', 'Ka. Tintanya masih basah.');
-  yield SAY('Bayu', 'Pasti kena embun. Sini, aku ikat pita di pohon itu. Biar kita nggak nyasar.');
-  yield DO(() => { showTapes(1); sfx.snap(); });
-  yield T(0.8);
-  yield* walkOn('Lanjut naik ke Pos 2.');
-  // ---------------- pendakian 1: selendang ----------------
+  yield DO(() => { addFind('Kertas di Pos 1', '"14 Suro 1999. Kami berempat. Laras bilang ada yang memanggil dari belakang. Kami bilang itu cuma angin."'); addFear(0.12); showTapes(1); sfx.snap(); });
+  yield* walkOn('Lanjut naik.');
   yield UNTIL(() => raka.z <= -58);
   yield* stopWalk();
   yield DO(() => { bayu.tx = SCARF.x - 1.4; bayu.tz = SCARF.z + 1.2; bayu.spd = 3; cineTo(SCARF.x + 2.6, terrainH(SCARF.x, SCARF.z) + 2.0, SCARF.z + 4.2, SCARF.x - 1.0, terrainH(SCARF.x, SCARF.z) + 1.8, SCARF.z, 1.8); });
-  yield T(1.6);
-  yield SAY('Bayu', 'Eh, ada kain di ranting. Hijau muda... bagus banget.');
-  yield SAY('Dinda', 'Hijau muda. Persis yang Mbah bilang.');
-  yield SAY('Narator', 'Kain itu bergoyang pelan, satu-satunya benda di jalur yang tampak hidup.');
-  yield CHOICE(['Taruh lagi, Bayu. Itu larangan Mbah.', 'Biarkan saja... cuma kain.']);
-  if (LASTCHOICE === 0) {
-    S.flags.selendangDitaruh = true;
-    yield SAY('Bayu', 'Iya, iya. Penakut. Nih, kubiarkan di sana. Puas?');
-  } else {
+  yield SAY('Bayu', 'Ada selendang hijau di ranting. Kok bagus.');
+  yield CHOICE(['Taruh lagi, itu larangan Mbah.', 'Biarkan saja, cuma kain.']);
+  if (LASTCHOICE === 0) { S.flags.selendangDitaruh = true; }
+  else {
     S.flags.selendangDiambil = true; S.flags.bayuHum = true;
     yield DO(() => { scarfMesh.visible = false; bayuScarf.visible = true; sfx.whisper(); addFear(0.14); });
-    yield SAY('Bayu', 'Nah, gitu dong. Kuikat di tas. Buat kenang-kenangan.');
-    yield SAY('Narator', 'Di suatu tempat di dalam hutan, sesuatu bergeser. Pelan. Seperti menarik napas panjang.');
   }
   yield* walkOn('Terus naik.');
-  yield UNTIL(() => raka.z <= ZB);
-  // ---------------- loop 1 ----------------
-  yield* stopWalk();
-  yield* blink(() => { tpTrail(ZA); });
-  yield DO(() => { flicker(1.0); addFear(0.1); if (S.flags.selendangDitaruh) { scarfMesh.visible = false; bayuScarf.visible = true; S.flags.bayuHum = true; } faceTo(raka, POS1.x, POS1.z); });
-  yield SAY('Dinda', 'Tunggu. Itu... Pos 1. Lampu yang sama.');
-  yield SAY('Bayu', 'Nggak mungkin. Kita jalan lurus dari tadi.');
-  yield SAY('Dinda', 'Pita merahmu masih di pohon itu, Yu.');
-  if (S.flags.selendangDitaruh) {
-    yield SAY('Dinda', 'Dan tasmu... Yu, apa itu di tasmu?');
-    yield SAY('Bayu', 'Aku taruh di ranting tadi. Aku yakin. Aku YAKIN.');
-    yield SAY('Raka', 'Lepas, Yu. Buang.');
-    yield SAY('Bayu', '...Nanti. Nanti kulepas di atas. Talinya... tidak mau lepas.');
-  } else {
-    yield SAY('Bayu', 'Kita cuma belok tanpa sadar. Ayo, sekali lagi.');
-  }
-  // ---------------- pendakian 2: panggilan ----------------
-  yield* walkOn('Coba sekali lagi. Ikuti jalur.');
-  yield UNTIL(() => raka.z <= -56);
-  yield* stopWalk();
-  yield DO(() => { sfx.whisper(); addFear(0.12); });
-  yield T(1.0);
-  yield SAY('Suara', '(dari sisi kiri, sangat pelan) ...Dinda...');
-  yield SAY('Dinda', 'Ya—');
-  yield CHOICE(['Pegang tangan Dinda erat-erat!', 'Bisikkan: "Jangan jawab."'], 4);
-  if (LASTCHOICE >= 0) {
-    S.flags.dindaDitahan = true;
-    yield SAY('Dinda', '(berbisik) Ka... suaranya pakai suaraku.');
-  } else {
-    S.flags.dindaMenjawab = true; addFear(0.2);
-    yield SAY('Dinda', 'Iya? Siapa—');
-    yield DO(() => sfx.whisper());
-    yield SAY('Suara', '...bagus.');
-  }
-  yield DO(() => { sfx.stepsBehind(9, 0.7); });
-  yield LOOKGUARD(8, figBehind);
-  yield SAY('Narator', 'Langkah di belakang berhenti. Lalu terdengar seseorang bersenandung, lirih, di sela kabut.');
-  yield SAY('Dinda', 'Ka... itu Bayu. Dia yang bersenandung.');
-  yield DO(() => { S.flags.bayuHum = true; sfx.hum(); faceTo(bayu, raka.x, raka.z); });
-  yield SAY('Raka', 'Yu. Berhenti bersenandung.');
-  yield SAY('Bayu', 'Bersenandung? Aku? ...Aku nggak lagi bersenandung.');
-  yield* walkOn('Naik lagi. Jangan berhenti.');
-  yield UNTIL(() => raka.z <= ZB);
-  // ---------------- loop 2 ----------------
-  yield* stopWalk();
-  yield* blink(() => { tpTrail(ZA); showTapes(3); });
-  yield DO(() => { flicker(1.2); addFear(0.12); faceTo(raka, POS1.x, POS1.z); });
-  yield SAY('Bayu', 'Aku cuma ikat satu pita, Ka. Cuma satu.');
-  yield SAY('Dinda', 'Sekarang ada tiga.');
-  yield SAY('Narator', 'Lampu minyak di Pos 1 mengerjap. Sekali. Dua kali. Seperti ada yang berdiri di depannya.');
-  yield SAY('Raka', '(Jangan panik. Jangan berhenti. Jangan menoleh.)');
-  // ---------------- pendakian 3: gelang & padam ----------------
-  yield* walkOn('Jangan berhenti. Ikuti jalur.');
   yield DO(() => { brace.visible = true; braceGlow.visible = true; });
   yield UNTIL(() => raka.z <= -52);
   yield* stopWalk();
@@ -1326,40 +1213,24 @@ function* bab2() {
   yield ACTION('Periksa gelang', BRACE.x, BRACE.z, 2.4);
   yield* stopWalk();
   yield DO(() => { faceTo(raka, BRACE.x, BRACE.z); cineTo(BRACE.x + 1.6, terrainH(BRACE.x, BRACE.z) + 1.3, BRACE.z + 2.2, BRACE.x, terrainH(BRACE.x, BRACE.z) + 0.2, BRACE.z, 2.4); brace.visible = false; braceGlow.visible = false; });
-  yield SAY('Narator', 'Gelang benang hijau, terikat di akar yang menonjol. Ada huruf disulam di sana: L - A - R - A - S.');
   yield DO(() => { addFind('Gelang benang hijau', 'Tersulam nama "LARAS". Masih hangat, seperti baru dilepas.'); addFear(0.12); });
-  yield SAY('Dinda', 'Laras... yang ada di kertas tadi.');
-  yield SAY('Raka', 'Yang bilang ada suara memanggil dari belakang.');
-  yield SAY('Bayu', '(bersenandung pelan, menatap kosong ke arah hutan)');
   yield* walkOn('Terus naik.');
   yield UNTIL(() => raka.z <= -68);
-  // ---------------- padam ----------------
   yield* stopWalk();
   yield DO(() => { flicker(1.8); sfx.sting(); addFear(0.15); });
-  yield T(1.6);
-  yield SAY('Dinda', 'Senterku berkedip. Ka? Senterku—');
-  yield DO(() => { flashOn = false; darkK = 1; lampB.base = 0; });
-  yield DO(() => { sfx.whisper(); });
-  yield SAY('Raka', 'Tetap di sini. Jangan lepas tangan siapa pun.');
-  yield T(2.2);
-  yield DO(() => { sfx.stepsBehind(10, 0.5); });
-  yield T(3.0);
-  yield SAY('Dinda', 'Ka... ada yang pegang tanganku. Dingin sekali.');
-  yield DO(() => { sfx.whisper(); addFear(0.12); });
-  yield SAY('Dinda', 'Kaaa—');
-  yield T(3.4);
-  yield DO(() => { dinda.g.visible = false; dinda.tx = null; dinda.follow = false; dLamp.visible = true; });
-  yield DO(() => { flashOn = true; darkK = 0; lampB.base = 42; flicker(1.5); });
   yield T(1.0);
+  yield SAY('Dinda', 'Senterku berkedip—');
+  yield DO(() => { flashOn = false; darkK = 1; lampB.base = 0; sfx.whisper(); });
+  yield T(1.8);
+  yield DO(() => { sfx.stepsBehind(10, 0.5); });
+  yield T(2.2);
+  yield DO(() => { sfx.whisper(); addFear(0.12); });
+  yield T(1.8);
+  yield DO(() => { dinda.g.visible = false; dinda.tx = null; dinda.follow = false; dLamp.visible = true; flashOn = true; darkK = 0; lampB.base = 42; flicker(1.5); });
+  yield T(0.6);
   yield DO(() => { faceTo(bayu, SIDE0.x - 4, SIDE0.z); bayu.tx = null; cineTo(raka.x + 1.5, raka.y + 1.9, raka.z + 3.6, raka.x, raka.y + 1.2, raka.z - 2, 2.0); });
-  yield SAY('Raka', 'Din? DINDA!');
-  yield SAY('Narator', 'Di tepi jalur, senter Dinda tergeletak. Cahayanya menunjuk lurus ke dalam hutan.');
-  yield SAY('Bayu', '(bersenandung, tak menoleh) Dia ikut pergi.');
-  yield SAY('Raka', 'Yu, kamu lihat dia ke mana?!');
-  yield SAY('Bayu', 'Jangan teriak. Nanti dia marah.');
-  yield SAY('Raka', 'Siapa yang marah?');
-  yield SAY('Bayu', 'Yang punya selendang.');
-  // ---------------- mengikuti cahaya ----------------
+  yield SAY('Raka', 'Dinda?! DINDA!');
+  yield SAY('Bayu', '(datar) Dia ikut pergi... yang punya selendang.');
   yield DO(() => {
     wispS.x = SIDE0.x - 3; wispS.z = SIDE0.z - 2; wispS.tx = SIDE[1][0]; wispS.tz = SIDE[1][1]; wispS.on = true; wisp.visible = true; ambientOn = false;
     CORR.mode = 'poly'; CORR.w = 3.0; CORR.pts = [[trailX(-58), -58], [SIDE0.x, SIDE0.z]].concat(SIDE);
@@ -1367,61 +1238,44 @@ function* bab2() {
   });
   yield { init() { wispS.tx = SIDE[1][0]; wispS.tz = SIDE[1][1]; }, test: () => true };
   yield GOTO(SIDE0.x, SIDE0.z, 3.2, true);
-  yield DO(() => { sfx.whisper(); toast('“Ka... sini...”', 2600); addFear(0.1); bayu.follow = false; bayu.tx = null; });
-  yield SAY('Narator', 'Cahaya hijau itu bergerak menjauh. Dari belakangmu terdengar bunyi berdebum pelan, berulang: sesuatu terbungkus kain putih melompat-lompat mendekat di antara pepohonan.');
+  yield DO(() => { sfx.whisper(); toast('"Ka... sini..."', 2600); addFear(0.1); bayu.follow = false; bayu.tx = null; });
   yield FADE(true, 0.3);
   yield CHASE([[SIDE0.x, SIDE0.z]].concat(SIDE), { ghost: 'pocong', gap: 8, speed: 4.9 });
   yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); wispS.tx = SIDE[SIDE.length - 1][0] - 4; wispS.tz = SIDE[SIDE.length - 1][1] - 4; });
-  yield SAY('Narator', 'Cahaya hijau itu melayang naik, lalu padam di sela kabut. Jalan setapak berakhir di dinding pandan yang rapat.');
   yield* blink(() => { enterClearing(); });
-  // ---------------- petilasan ----------------
-  yield SAY('Narator', 'Sebuah lapangan kecil terbuka di tengah hutan. Beringin raksasa berdiri di sana, akar-akarnya menjuntai seperti rambut.');
-  yield SAY('Narator', 'Di depannya ada altar batu, lilin-lilin kecil, dan asap dupa yang naik lurus tanpa tertiup angin.');
+  yield SAY('Narator', 'Lapangan kecil di tengah hutan. Beringin raksasa, altar batu, lilin, dan asap dupa yang tak tertiup angin.');
   yield DO(() => { followCam(); ctrl = 'walk'; setObj('Dekati Dinda.'); });
   yield GOTO(CL.x + 0.5, CL.z + 1.0, 2.6, true);
   yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); faceTo(raka, dinda.x, dinda.z); cineTo(CL.x + 2.6, 2.0, CL.z + 4.6, CL.x + 0.4, 1.4, CL.z - 2.4, 1.6); sfx.whisper(); addFear(0.1); });
   yield DO(() => { later(0.4, () => { clFlames[0].k = 0; clFlames[3].k = 0; }); later(1.4, () => { clFlames[1].k = 0; clFlames[4].k = 0; }); later(2.6, () => { clFlames[2].k = 0; clFlames[5].k = 0; lampB.base = 8; }); });
-  yield SAY('Raka', 'Din? Din, ini aku.');
-  yield SAY('Dinda', '(tanpa berbalik) Jangan terlalu dekat, Ka. Dia sedang bicara.');
-  yield SAY('Raka', 'Siapa?');
-  yield SAY('Dinda', 'Namanya Laras. Dia bilang dia sudah lama sekali menunggu di sini.');
-  yield SAY('Dinda', 'Dia bilang... dia tidak mau turun sendirian lagi.');
+  yield SAY('Dinda', '(tanpa berbalik) Jangan dekat, Ka. Namanya Laras. Dia sudah lama menunggu di sini.');
   if (S.flags.jaketHijau) yield SAY('Suara', '(dari atas beringin) ...kau memakai warnaku...');
-  else yield SAY('Suara', '(dari atas beringin) ...bagian dalammu... masih hijau...');
   yield DO(() => { sfx.sting(); flicker(1.0); addFear(0.15); cineTo(CL.x + 1.2, 1.7, CL.z - 0.4, CL.x + 1.9, 0.3, CL.z - 3.3, 1.8); });
-  yield SAY('Narator', 'Di kaki altar, sebuah foto tergeletak. Sudutnya berkilau lembap.');
   yield DO(() => { followCam(); ctrl = 'walk'; setObj('Periksa foto di kaki altar.'); });
   yield ACTION('Periksa foto', CL.x + 1.9, CL.z - 2.4, 2.4);
   yield DO(() => { ctrl = 'none'; resetInput(); setObj(''); faceTo(raka, CL.x + 1.9, CL.z - 3.3); cineTo(CL.x + 1.0, 1.6, CL.z - 1.4, CL.x + 1.9, 0.1, CL.z - 3.3, 2.4); });
   yield CHOICE(['Ambil fotonya', 'Cukup dibaca, jangan diambil']);
   if (LASTCHOICE === 0) { S.flags.fotoDiambil = true; yield DO(() => { photoMesh.visible = false; addFear(0.12); sfx.whisper(); }); }
-  yield SAY('Narator', 'Polaroid yang sudah menguning. Empat pendaki berdiri di depan gapura yang sama. Di sudut foto, seorang gadis bersyal hijau muda tersenyum.');
-  yield SAY('Narator', 'Di baliknya, tulisan tangan: "14 Suro 1999. Turun bertiga. Yang keempat masih di atas."');
-  yield DO(() => { addFind('Foto polaroid', '"14 Suro 1999. Turun bertiga. Yang keempat masih di atas." Orang ketiga dari kiri memakai topi biru.'); addFear(0.15); });
-  yield SAY('Raka', 'Yang ketiga dari kiri... topi biru itu...');
-  yield DO(() => { faceTo(bayu, raka.x, raka.z); cineTo(raka.x - 1.4, raka.y + 1.6, raka.z - 0.8, bayu.x, bayu.y + 1.5, bayu.z, 1.4); });
-  yield SAY('Bayu', '(suaranya datar) Tiga yang turun, Ka. Kali ini... juga tiga.');
-  yield DO(() => { sfx.hum(); addFear(0.12); cineTo(CL.x + 0.5, 1.9, CL.z + 0.6, CL.x + 0.4, 1.5, CL.z - 2.4, 1.8); });
-  yield SAY('Dinda', '(berbisik, tetap membelakangi) Ka. Jangan menoleh. Jangan lihat Bayu.');
+  yield DO(() => { addFind('Foto polaroid', '"14 Suro 1999. Turun bertiga. Yang keempat masih di atas." Orang ketiga dari kiri memakai topi biru.'); addFear(0.15); sfx.hum(); cineTo(CL.x + 0.5, 1.9, CL.z + 0.6, CL.x + 0.4, 1.5, CL.z - 2.4, 1.8); });
+  yield SAY('Dinda', '(berbisik) Jangan menoleh ke arah Bayu.');
   yield CHOICE(['Menoleh ke arah Bayu', 'Tetap menatap punggung Dinda'], 6);
   yield DO(() => { sfx.sting(); flicker(2); addFear(0.3); });
   if (LASTCHOICE === 0) {
     S.flags.menolehAkhir = true;
     yield DO(() => { cineTo(bayu.x, bayu.y + 1.6, bayu.z + 2.0, bayu.x, bayu.y + 1.55, bayu.z, 6); });
-    yield SAY('Narator', 'Bayu berdiri tepat di belakangnya. Kepalanya miring terlalu jauh. Bibirnya bergerak, tetapi yang keluar adalah suara perempuan.');
     yield SAY('Suara', '...terima kasih... sudah membawa mereka...');
   } else {
     S.flags.menolehAkhir = false;
-    yield SAY('Narator', 'Dinda berbalik sangat pelan. Selendang hijau itu sudah melingkar di lehernya. Ia tersenyum, tetapi bukan dengan bibirnya sendiri.');
     yield SAY('Dinda', '(suara yang bukan miliknya) ...terlambat, Raka...');
   }
   yield DO(() => { flashOn = false; darkK = 1; lampB.base = 0; });
   yield T(0.6);
   yield DIM(1, 0.4);
   yield DO(() => { saveGame(); });
-  yield T(1.5);
+  yield T(1.0);
   yield* bab3();
 }
+
 function enterClearing() {
   setMountZone(true);
   clearing.visible = true; CORR.mode = 'none'; wispS.on = false; wisp.visible = false; dLamp.visible = false; hideFig(); ambientOn = false;
@@ -1499,70 +1353,42 @@ function* bab3() {
     S.ch = 3; camYaw = 0; followCam(); snapCam(); saveGame();
   });
   yield FADE(false, 2.2);
-  yield SAY('Narator', 'Gelap. Jangkrik berhenti bersuara, seolah seluruh hutan menahan napas.');
-  yield SAY('Narator', 'Enam lilin di altar sudah padam. Di kaki beringin, sesuatu berdiri dan menunggu.');
-  if (S.flags.menolehAkhir) yield SAY('Narator', 'Bayu masih berdiri di belakangmu. Napasnya dingin di tengkuk.');
-  else yield SAY('Narator', 'Dinda berdiri tak bergerak di depan altar. Selendang hijau itu melilit lehernya.');
+  if (S.flags.menolehAkhir) yield SAY('Narator', 'Enam lilin altar sudah padam. Bayu berdiri di belakangmu, napasnya dingin di tengkuk.');
+  else yield SAY('Narator', 'Enam lilin altar sudah padam. Dinda berdiri tak bergerak, selendang hijau melilit lehernya.');
   yield DO(() => { frame2(raka, bayu, 3.6, 1, 1.6); sfx.hum(); });
-  yield SAY('Bayu', 'Ka... dengar aku sebentar. Cuma sebentar, sebelum dia bicara lewat mulutku lagi.');
-  yield SAY('Raka', 'Siapa kamu sebenarnya, Yu?');
-  yield SAY('Bayu', 'Bayu. Nama itu memang punyaku. Aku orang ketiga dari kiri di foto itu.');
-  yield SAY('Bayu', '14 Suro 1999. Kami berempat naik: aku, dua temanku, dan Laras.');
-  yield SAY('Bayu', 'Waktu turun malam-malam, dari belakang ada yang memanggil. Suara Laras. \"Tunggu... tunggu aku.\"');
-  yield SAY('Bayu', 'Aku yang bilang, \"Itu cuma angin. Jangan menoleh.\" Kami terus berjalan. Tak seorang pun menoleh.');
-  yield SAY('Bayu', 'Kami turun bertiga. Yang keempat... tertinggal di atas.');
-  yield SAY('Raka', 'Kamu... sudah mati juga?');
-  yield SAY('Bayu', 'Aku pulang. Hidup, dengan suara itu di kepalaku sampai akhir. Tapi tiap Suro aku kembali naik.');
-  yield SAY('Bayu', 'Mencari orang yang mau menoleh untuknya. Kamu bukan kebetulan, Ka. Aku yang memilih kalian. Maafkan aku.');
-  yield SAY('Bayu', 'Selendang itu bukan kutukan. Itu miliknya. Dia cuma ingin dikenali, dan selama ini tak ada yang mau menoleh.');
-  yield SAY('Bayu', 'Nyalakan lilin-lilin itu. Dia tenang kalau ada api. Korek ini sudah dua puluh tujuh tahun kubawa.');
+  yield SAY('Bayu', 'Ka... namaku Bayu, orang ketiga di foto itu. Tahun 1999 kami tak menoleh saat Laras memanggil. Aku turun hidup, tapi tiap Suro aku kembali membawa orang yang mau menoleh untuknya.');
+  yield SAY('Bayu', 'Nyalakan enam lilin ini. Dia tenang kalau ada api.');
   yield* walkAlone('Ambil korek dari Bayu.');
   yield ACTION('Ambil korek', bayu.x, bayu.z, 2.4);
-  yield DO(() => { S.items.push('Korek api tua'); sfx.chime(); toast('Mendapat: Korek api tua 🔥'); });
+  yield DO(() => { S.items.push('Korek api tua'); sfx.chime(); toast('Mendapat: Korek api tua 🔥'); addFind('Cerita Bayu', 'Kami berempat naik tahun 1999. Laras memanggil dari belakang, kami tak menoleh. Turun bertiga.'); });
   yield* stopAlone();
-  yield DO(() => { addFind('Cerita Bayu', 'Kami berempat naik tahun 1999. Laras memanggil dari belakang, kami tak menoleh. Turun bertiga.'); });
   // ---------------- menyalakan enam lilin ----------------
   for (let i = 0; i < 6; i++) {
     yield* walkAlone('Nyalakan lilin di altar (' + (i + 1) + '/6).');
     yield ACTION('Nyalakan lilin', CANDLES[i].x, CANDLES[i].z, 2.1);
     yield DO(() => { lightCandle(i); });
     yield* stopAlone();
-    yield T(0.5);
-    if (i === 1) { yield* scareGuard('(dari belakang, sangat dekat) ...jangan berhenti... aku di sini...', 7); yield SAY('Raka', '(Jangan panik. Nyalakan sisanya.)'); }
     if (i === 3) {
       yield DO(() => { sfx.stepsBehind(8, 0.8); addFear(0.15); flicker(1.0); sfx.whisper(); });
-      yield SAY('Suara', '(menjerit lirih dari kegelapan) ...Raka... jangan nyalakan yang lain...');
-      yield SAY('Bayu', 'Dia marah! Lari ke gerbang, Ka! Dia tidak bisa melewati gerbang itu!');
+      yield SAY('Bayu', 'Dia marah! Lari ke gerbang, Ka!');
       yield FADE(true, 0.3);
       yield CHASE([[CL.x - 8.5, CL.z - 2.5], [CL.x - 8.0, CL.z + 4.0], [CL.x - 3.0, CL.z + 7.5], [CL.x, CL.z + 12.5]], { ghost: 'laras', gap: 8, speed: 4.8, endR: 3.0 });
-      yield SAY('Narator', 'Di bawah gerbang, sosok itu terhenti seolah menabrak dinding yang tak terlihat, lalu larut kembali ke dalam gelap.');
     }
   }
   // ---------------- Laras terlihat ----------------
   yield DO(() => { R3.laras = true; showFig(ALT.x + 0.5, ALT.z - 4.2); spiritFixed = 0; fearBase = 0.12; sfx.chime(); cineTo(ALT.x + 0.5, 2.0, ALT.z + 3.6, ALT.x + 0.5, 1.7, ALT.z - 4.2, 1.6); });
-  yield SAY('Narator', 'Keenam lilin menyala. Di seberang altar, sosok itu akhirnya terlihat jelas: seorang gadis muda bersyal hijau muda, pucat, basah oleh embun.');
-  yield SAY('Laras', 'Kalian... menyalakan api untukku?');
-  yield SAY('Laras', 'Sudah lama sekali tidak ada yang menyalakan api untukku.');
-  yield SAY('Laras', 'Setiap malam Suro aku memanggil. \"Tunggu aku.\" Mereka selalu berjalan lebih cepat.');
-  yield SAY('Bayu', 'Laras... maafkan aku. Aku takut. Aku bilang itu cuma angin.');
-  yield SAY('Laras', 'Bayu. Kau selalu kembali, tapi kau tak pernah menoleh.');
-  yield SAY('Laras', 'Aku meminjam Dinda sebentar. Suaranya hangat. Aku cuma ingin ada yang menemaniku turun.');
-  yield SAY('Raka', '(Menemani... berarti Dinda tidak akan ikut turun.)');
-  yield SAY('Laras', 'Aku tidak jahat. Aku hanya kesepian, dan kesepian membuat orang lupa cara melepaskan.');
+  yield SAY('Laras', 'Kalian menyalakan api untukku... sudah lama sekali tidak ada yang mau. Aku hanya kesepian, dan aku meminjam Dinda sebentar untuk menemaniku turun.');
   // ---------------- ritual ----------------
   yield DO(() => { followCam(); });
   yield* walkAlone('Letakkan bunga sesajen di altar.');
   yield ACTION('Letakkan sesajen', ALT.x, ALT.z + 2.7, 2.2);
   yield DO(() => { R3.sesajen = true; altarBloom.visible = true; S.items = S.items.filter(x => x !== 'Bunga sesajen'); sfx.note(); toast('Sesajen diletakkan dengan hormat 🌼'); });
   yield* stopAlone();
-  yield SAY('Laras', '(pelan) Bunga... Sudah lama aku tidak menerima bunga.');
-  yield* scareGuard('(dari belakang) ...jangan lepaskan Dinda... dia hangat...', 7);
+  yield* scareGuard('(dari belakang) ...jangan lepaskan Dinda...', 6);
   yield* walkAlone('Lepaskan selendang dari leher Dinda.');
   yield ACTION('Lepas selendang', dinda.x, dinda.z, 2.2);
   yield DO(() => { dindaScarf.visible = false; S.items.push('Selendang hijau'); sfx.chime(); addFear(0.1); faceTo(dinda, raka.x, raka.z); dinda.watch = true; });
   yield* stopAlone();
-  yield SAY('Dinda', 'Ka...? Aku... kenapa dingin sekali? Kenapa aku ada di sini?');
-  yield SAY('Raka', 'Tenang, Din. Aku belum selesai. Tetap di dekatku.');
   yield* walkAlone('Letakkan selendang di altar.');
   yield ACTION('Letakkan selendang', ALT.x - 1.1, ALT.z + 2.5, 2.2);
   yield DO(() => { R3.selendang = true; altarScarf.visible = true; S.items = S.items.filter(x => x !== 'Selendang hijau'); sfx.note(); toast('Selendang dikembalikan ke altar 🧣'); });
@@ -1573,20 +1399,16 @@ function* bab3() {
     yield DO(() => { R3.foto = true; sfx.note(); toast('Foto dikembalikan 📷'); });
     yield* stopAlone();
   }
-  yield SAY('Laras', '(sangat lirih) ...terima kasih.');
   // ---------------- menoleh ----------------
   yield DO(() => { hideFig(); flicker(0.8); });
   yield FADE(true, 0.3);
   yield DO(() => { place(raka, ALT.x, ALT.z + 3.0, Math.PI); camYaw = 0; followCam(); snapCam(); });
   yield FADE(false, 0.6);
-  yield SAY('Narator', 'Hening. Kemudian, dari belakangmu, sangat dekat, seseorang memanggil namamu.');
   yield DO(() => { sfx.whisper(); showFig(raka.x, raka.z + 3.4); addFear(0.15); });
   yield SAY('Laras', 'Raka...');
   yield LOOKAT(1.0, 34);
   yield DO(() => { cineTo(raka.x + 0.7, raka.y + 1.75, raka.z - 0.6, raka.x, 1.7, raka.z + 3.4, 2.4); sfx.chime(); fearBase = 0.05; });
-  yield SAY('Laras', 'Kau menoleh.');
-  yield SAY('Laras', 'Dua puluh tujuh tahun... tak ada yang menoleh.');
-  yield SAY('Narator', 'Wajahnya tak menakutkan. Hanya sangat, sangat lelah.');
+  yield SAY('Laras', 'Kau menoleh. Dua puluh tujuh tahun tak ada yang mau menoleh.');
   yield CHOICE(['\"Aku di sini, Laras. Aku dengar kamu.\"', '\"Pergi! Kembalikan Dinda!\"'], 10);
   R3.kind = (LASTCHOICE === 0); S.flags.laras = LASTCHOICE;
   if (window.__FORCE_KIND !== undefined) R3.kind = !!window.__FORCE_KIND;
@@ -1595,22 +1417,13 @@ function* bab3() {
   if (window.__FORCE_END) R3.end = window.__FORCE_END;
   S.flags.ending = R3.end; saveGame();
   if (R3.end === 'A') {
-    yield SAY('Raka', 'Aku dengar kamu. Maaf... kami semua lewat terlalu cepat. Kamu tidak sendirian lagi.');
-    yield SAY('Laras', '(tersenyum, untuk pertama kalinya) ...kau menoleh. Itu saja. Itu yang kutunggu.');
-    yield SAY('Narator', 'Api keenam lilin bergoyang, lalu naik lurus seperti doa. Selendang di altar terangkat perlahan, menjadi kabut hijau yang hangat.');
-    yield SAY('Bayu', 'Laras... boleh aku ikut pulang?');
-    yield SAY('Laras', 'Ayo, Bayu. Kita turun bersama. Kali ini aku yang menunggumu.');
+    yield SAY('Laras', '(tersenyum) ...kau menoleh. Itu saja yang kutunggu. Ayo, Bayu, kita turun bersama.');
   } else if (R3.end === 'B') {
-    yield SAY('Raka', 'Aku dengar kamu, Laras. Aku di sini.');
-    yield SAY('Laras', '(suaranya bergetar) ...kau baik. Tapi ada yang belum kau kembalikan dengan hormat.');
-    yield SAY('Narator', 'Lilin-lilin meredup satu per satu. Sosok itu memudar pelan, tak sepenuhnya pergi.');
-    yield SAY('Laras', 'Bawa Dinda pulang. Kembalilah saat Suro tahun depan... dan menolehlah lebih cepat.');
+    yield SAY('Laras', 'Kau baik, tapi ada yang belum kau kembalikan dengan hormat. Bawa Dinda pulang, dan kembalilah menoleh lebih cepat tahun depan.');
   } else {
-    yield SAY('Narator', 'Wajah gadis itu berubah. Kelelahan di matanya menjadi sesuatu yang dingin dan sangat lapar.');
-    yield SAY('Laras', 'Sama saja seperti mereka. Semua orang menoleh hanya untuk menyuruhku pergi.');
+    yield SAY('Laras', 'Sama saja seperti mereka. Semua orang menoleh hanya untuk menyuruhku pergi. Kalau begitu, aku ikut turun bersamamu.');
     yield DO(() => { clFlames.forEach(f => { f.k = 0; }); lampB.base = 0; addFear(0.4); if (startJumpscare(GH.laras)) later(1.9, endJumpscare); else { sfx.sting(); flicker(2.4); G_shake(1); } });
     yield T(2.0);
-    yield SAY('Laras', 'Kalau begitu... aku ikut turun bersamamu.');
   }
   if (R3.end === 'C') yield DIM(1, 0.7); else yield WHITEHOLD(1.0);
   yield DO(() => { hideFig(); saveGame(); });
@@ -1633,21 +1446,16 @@ function* bab4(END) {
     camYaw = Math.PI; followCam(); snapCam();
   });
   yield FADE(false, 2.0);
-  yield SAY('Narator', 'Fajar Jumat Kliwon. Kabut menipis, dan burung-burung kembali bersuara di Gunung Pandan.');
-  yield SAY('Narator', 'Di kejauhan, rombongan warga mulai naik membawa tumpeng dan bunga untuk sedekah bumi.');
+  yield SAY('Narator', 'Fajar Jumat Kliwon. Kabut menipis di Gunung Pandan.');
   if (END === 'A') {
     yield DO(() => { cineTo(GATE.x - 0.6, 2.0, GATE.z - 8.4, GATE.x - 3.4, 1.5, GATE.z - 3.8, 1.6); });
-    yield SAY('Bayu', 'Ka... Din. Terima kasih. Dua puluh tujuh tahun aku ingin mengatakan itu.');
-    yield SAY('Laras', '(dari sampingnya, lembut) Kalian juga, hati-hati di jalan turun.');
+    yield SAY('Bayu', 'Terima kasih, Ka. Dua puluh tujuh tahun aku ingin mengatakan itu.');
     yield WFLASH(1.8);
     yield DO(() => { hideFig(); bayu.g.visible = false; sfx.chime(); followCam(); });
   } else if (END === 'B') {
     yield DO(() => { cineTo(GATE.x - 0.6, 2.0, GATE.z - 8.4, GATE.x - 2.6, 1.5, GATE.z - 3.6, 1.6); });
-    yield SAY('Bayu', 'Aku masih harus menemaninya, Ka. Tahun depan, kalau kamu berani... menolehlah lebih cepat.');
+    yield SAY('Bayu', 'Aku masih harus menemaninya, Ka. Tahun depan, menolehlah lebih cepat.');
     yield DO(() => { bayu.g.visible = false; sfx.whisper(); followCam(); });
-  } else {
-    yield SAY('Dinda', 'Ka... kamu diam terus dari tadi. Kamu kenapa?');
-    yield SAY('Raka', '(Tidak ada yang berjalan di belakang kami. Tidak ada.)');
   }
   yield DO(() => { dinda.follow = true; followCam(); });
   yield* walkAlone('Turun ke pos jaga. Mbah Karto menunggu.');
@@ -1655,28 +1463,12 @@ function* bab4(END) {
   yield* stopAlone();
   yield DO(() => { dinda.follow = false; faceTo(raka, mbah.x, mbah.z); faceTo(dinda, mbah.x, mbah.z); frame2(raka, mbah, 4.6, 1, 1.6); });
   if (END === 'A') {
-    yield SAY('Mbah Karto', 'Empat orang naik di tahun 99. Tiga yang turun. Semalam, akhirnya, yang keempat ikut turun.');
-    yield SAY('Raka', 'Mbah tahu?');
-    yield SAY('Mbah Karto', 'Dua puluh tujuh tahun Mbah berjaga di sini. Menunggu ada yang mau menoleh untuk Laras.');
-    yield SAY('Mbah Karto', 'Aturan itu bukan untuk menakuti. Jangan pakai hijau muda, supaya kalian tak dikira dia. Jangan ambil apa pun, supaya tak berhutang padanya.');
-    yield SAY('Mbah Karto', 'Jangan menoleh, supaya kalian tak lari terlalu cepat ke arah yang belum siap. Tapi ada satu orang, satu malam, yang harus melanggarnya.');
-    yield SAY('Raka', 'Aku menoleh, Mbah.');
-    yield SAY('Mbah Karto', 'Ya. Dan itu satu-satunya pantangan yang boleh dilanggar. Terima kasih, Nak.');
-    yield SAY('Narator', 'Matahari naik di atas Gunung Pandan. Di pos jaga, lampu minyak padam dengan sendirinya. Malam itu tak ada lagi yang memanggil dari belakang.');
+    yield SAY('Mbah Karto', 'Dua puluh tujuh tahun Mbah berjaga di sini. Semalam, akhirnya, yang keempat ikut turun. Terima kasih, Nak.');
   } else if (END === 'B') {
-    yield SAY('Mbah Karto', 'Kalian turun berdua. Tapi wajah kalian... masih ada yang belum selesai.');
-    yield SAY('Raka', 'Dia belum sepenuhnya tenang, Mbah. Ada yang belum kukembalikan dengan benar.');
-    yield SAY('Mbah Karto', 'Kadang cukup untuk satu malam. Sesajen dan selendang harus kembali dengan hormat, dan hati yang menoleh harus utuh.');
-    yield SAY('Mbah Karto', 'Suro tahun depan, naiklah lagi. Bawa yang belum kalian bawa.');
-    yield SAY('Narator', 'Pagi terasa terang, tetapi jauh di hutan sana, seseorang masih menunggu dipanggil dengan namanya.');
+    yield SAY('Mbah Karto', 'Wajah kalian masih ada yang belum selesai. Suro tahun depan, naiklah lagi.');
   } else {
-    yield SAY('Mbah Karto', 'Nak... jangan menoleh.');
-    yield SAY('Mbah Karto', '(menatap ke belakang Raka, sangat pelan) Berapa yang naik, dan berapa yang turun?');
-    yield SAY('Raka', 'Kami berdua, Mbah. Kan?');
-    yield DO(() => { sfx.stepsBehind(6, 0.6); sfx.whisper(); });
-    yield SAY('Mbah Karto', 'Sudah Mbah katakan. Dia paling suka orang yang berjalan sambil ketakutan.');
-    yield SAY('Narator', 'Di belakang mereka, sangat pelan, seseorang mengikuti dari jarak beberapa langkah.');
-    yield DO(() => { sfx.whisper(); addFear(0.4); });
+    yield SAY('Mbah Karto', 'Nak... berapa yang naik, dan berapa yang turun?');
+    yield DO(() => { sfx.stepsBehind(6, 0.6); sfx.whisper(); addFear(0.4); });
     yield SAY('Suara', '(dari belakang) ...Raka... tunggu aku...');
   }
   yield FADE(true, 2.0);
@@ -1684,6 +1476,7 @@ function* bab4(END) {
   yield CARD('TAMAT', names[END] || '', 5);
   yield DO(() => { state = 'end'; ctrl = 'none'; saveGame(); showEndPanel(END, names[END]); });
 }
+
 function showEndPanel(END, name) {
   const msg = END === 'A' ? 'Kamu mendapat akhir terbaik: sesajen, selendang, dan hatimu menoleh pada waktunya.' : (END === 'B' ? 'Ada akhir yang lebih baik. Coba lengkapi sesajen dan selendang, lalu jawab Laras dengan tulus.' : 'Ada dua akhir lain. Coba nyalakan lilin, kembalikan selendang, dan jawab Laras dengan lembut.');
   showPanel('<div class="board"><h1>Tamat</h1><h2>' + name + '</h2><p>' + msg + '</p><button class="cta" data-do="new">Main lagi dari awal</button><button class="cta alt" data-do="bab3">Ulangi Bab 3</button><button class="cta alt" data-do="credits">Kredit aset</button><button class="cta alt" data-do="menu">Ke menu</button></div>');
@@ -2164,7 +1957,7 @@ const verEl = document.createElement('div');
 Object.assign(verEl.style, { position: 'fixed', left: '6px', bottom: '4px', zIndex: '50', pointerEvents: 'none', font: '11px monospace', color: '#9aa596', opacity: '0.75' });
 if (document.body) document.body.appendChild(verEl);
 const modelState = {};
-function updVer() { verEl.textContent = BUILD + (NET.role !== 'solo' ? ' [' + NET.role + ']' : '') + ' | ' + Object.keys(MODELS).concat(['pohon', 'gunung', 'torii', 'rumput', 'awan', 'laras', 'pocong']).map(k => k + ':' + (modelState[k] || '-')).join(' '); }
+function updVer() { verEl.textContent = BUILD + (NET.role !== 'solo' ? ' [' + NET.role + ']' : '') + ' | ' + Object.keys(MODELS).concat(['pohon', 'gunung', 'torii', 'rumput', 'awan', 'laras', 'pocong', 'sepeda', 'tanah']).map(k => k + ':' + (modelState[k] || '-')).join(' '); }
 let rakaTopHex = 0xb6e3a0;
 function geoAxes(g) {
   g.computeBoundingBox(); const b = g.boundingBox;
@@ -2481,6 +2274,78 @@ gltfLoader.load('torii.glb', gltf => {
   } catch (e) { console.warn('torii.glb gagal dipasang:', e); modelState.torii = 'err'; updVer(); }
 }, undefined, () => { modelState.torii = 'x'; updVer(); });
 
+/* =====================================================================
+   SEPEDA: dinaikin di sepanjang jalur utama (CORR.mode 'trail'), turun
+   otomatis begitu jalur menyempit jadi jalan setapak (CORR.mode berubah).
+   ===================================================================== */
+const BIKE_SCALE = 1;   // ubah di sini kalau ukuran sepeda ternyata salah setelah dicoba di HP
+const BIKE = { obj: null, ready: false, mounted: false, wheelBack: null, wheelFront: null, pedal: null, spin: 0, parkFace: 0 };
+BIKE.z = -36; BIKE.x = trailX(BIKE.z) + 2.4; BIKE.parkFace = Math.atan2(0.154 * Math.cos(BIKE.z * 0.07), 1) + 0.3;
+let bikeNear = false;
+gltfLoader.load('sepeda.glb', gltf => {
+  try {
+    const root = gltf.scene;
+    root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+    root.scale.setScalar(BIKE_SCALE);
+    BIKE.obj = root; scene.add(root);
+    BIKE.wheelBack = root.getObjectByName('Back_Wheel_01');
+    BIKE.wheelFront = root.getObjectByName('Front_Wheel_06');
+    BIKE.pedal = root.getObjectByName('ChainRing_02');
+    root.position.set(BIKE.x, groundY(BIKE.x, BIKE.z), BIKE.z);
+    root.rotation.y = BIKE.parkFace - Math.PI / 2;
+    BIKE.ready = true; modelState.sepeda = 'ok'; updVer();
+  } catch (e) { console.warn('sepeda.glb gagal dipasang:', e); modelState.sepeda = 'err'; updVer(); }
+}, undefined, () => { modelState.sepeda = 'x'; updVer(); });
+function toggleBike() {
+  if (BIKE.mounted) { BIKE.mounted = false; BIKE.parkFace = ME.face; sfx.note(); toast('Turun dari sepeda.', 2400); }
+  else { BIKE.mounted = true; sfx.note(); toast('Naik sepeda. Lebih cepat, tapi lebih sulit menoleh sambil jalan.', 4000); }
+}
+function updateBike(dt) {
+  if (!BIKE.ready) return;
+  if (BIKE.mounted && CORR.mode !== 'trail') { BIKE.mounted = false; BIKE.parkFace = ME.face; toast('Jalur menyempit. Sepeda ditinggal di sini.', 3600); }
+  if (BIKE.mounted) {
+    BIKE.x = ME.x; BIKE.z = ME.z;
+    const sp = Math.hypot(vel.x, vel.z);
+    BIKE.spin += dt * sp * 2.6;
+    if (BIKE.wheelBack) BIKE.wheelBack.rotation.x = BIKE.spin;
+    if (BIKE.wheelFront) BIKE.wheelFront.rotation.x = BIKE.spin;
+    if (BIKE.pedal) BIKE.pedal.rotation.x = BIKE.spin * 0.6;
+  }
+  BIKE.obj.position.set(BIKE.x, groundY(BIKE.x, BIKE.z), BIKE.z);
+  BIKE.obj.rotation.y = (BIKE.mounted ? ME.face : BIKE.parkFace) - Math.PI / 2;
+  if (state !== 'play' || CH.on) { bikeNear = false; return; }
+  bikeNear = BIKE.mounted || (ctrl === 'walk' && CORR.mode === 'trail' && Math.hypot(ME.x - BIKE.x, ME.z - BIKE.z) < 2.0);
+  if (!goal) {
+    if (bikeNear) { el.act.textContent = BIKE.mounted ? 'Turun dari sepeda' : 'Naik sepeda'; el.act.classList.add('on'); }
+    else el.act.classList.remove('on');
+  }
+}
+
+/* =====================================================================
+   TANAH JALUR: tanah.glb diduplikasi dan disejajarkan sepanjang jalur
+   pendakian utama, dari kaki gunung sampai ke ujung jalur (puncak).
+   ===================================================================== */
+gltfLoader.load('tanah.glb', gltf => {
+  try {
+    let src = null; gltf.scene.traverse(o => { if (!src && o.isMesh) src = o; });
+    if (!src) return;
+    // petak lebih rapat di lereng yang lebih curam (mendekati puncak) supaya tidak terlalu banyak celah
+    const zs = []; for (let z = 24; z >= -142; z -= (z < -40 ? 14 : 30)) zs.push(z);
+    const MAXP = 26 * Math.PI / 180;                         // batas kemiringan petak (lebih dari ini akan tampak berdiri seperti tebok)
+    const im = new THREE.InstancedMesh(src.geometry, src.material, zs.length);
+    const o3 = new THREE.Object3D(); const EPS = 0.4;
+    zs.forEach((z, i) => {
+      const cx = trailX(z), slope = 2.2 * 0.07 * Math.cos(z * 0.07), yaw = Math.atan2(slope, 1);
+      const h0 = terrainH(trailX(z - EPS), z - EPS), h1 = terrainH(trailX(z + EPS), z + EPS), pitch = clamp(-(h1 - h0) / (2 * EPS), -MAXP, MAXP);
+      o3.position.set(cx, terrainH(cx, z) - 0.05, z); o3.rotation.set(pitch, yaw, 0); o3.scale.setScalar(1.05); o3.updateMatrix();
+      im.setMatrixAt(i, o3.matrix);
+    });
+    im.receiveShadow = true; im.frustumCulled = false; scene.add(im);
+    if (trailMesh) trailMesh.visible = false;
+    modelState.tanah = zs.length + 'x'; updVer();
+  } catch (e) { console.warn('tanah.glb gagal dipasang:', e); modelState.tanah = 'err'; updVer(); }
+}, undefined, () => { modelState.tanah = 'x'; updVer(); });
+
 /* rumput: petak rumput asli ditebar mengelilingi pemain (tiga tingkat detail), tidak di jalan setapak */
 const grass = { ready: false, im: null, caps: [2, 8, 26] };
 const GC = 4;
@@ -2686,6 +2551,7 @@ function updatePlayer(dt) {
   const len = Math.hypot(mx, my); if (len > 1) { mx /= len; my /= len; }
   const sy = Math.sin(camYaw), cy = Math.cos(camYaw);
   let spd = 3.4;
+  if (BIKE.mounted && !CH.on) spd = 7.2;
   if (CH.on) {
     const wantS = (sprintOn || keys.shift) && len > 0.1 && !exhausted;
     if (wantS && stamina > 0) { spd = 5.3; stamina = Math.max(0, stamina - dt * 0.22); if (stamina <= 0) exhausted = true; }
@@ -2734,6 +2600,7 @@ function update(dt) {
   stepScript(dt); dlgUpdate(dt);
   if (state === 'play') { updatePlayer(dt); }
   updateGoal(clock);
+  updateBike(dt);
 }
 let last = performance.now();
 function loop(now) {
